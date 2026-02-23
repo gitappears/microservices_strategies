@@ -1,0 +1,19 @@
+{
+  "name": "qinspecting-lambda-authorizer",
+  "version": "1.0.0",
+  "description": "Lambda Authorizer: JWT + consulta Tenancy (bd_tenancy_planes) para API Gateway",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node test.local.js"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.6.5",
+    "@aws-sdk/client-secrets-manager": "^3.600.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: QInspecting - API Gateway + Lambda Authorizer (JWT + Tenancy)
+
+Parameters:
+  SecretArn:
+    Type: String
+    Description: ARN del secret en Secrets Manager (JWT_SECRET y opcionalmente DB_* para Tenancy)
+  TenancyDbName:
+    Type: String
+    Default: bd_tenancy_planes
+    Description: Nombre de la base de datos de tenancy
+  AlbUrl:
+    Type: String
+    Default: ''
+    Description: '(Opcional) No usado en esta plantilla; ver api-gateway-rutas.md para añadir rutas al ALB'
+  StageName:
+    Type: String
+    Default: prod
+    Description: Nombre del stage de API Gateway
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: nodejs20.x
+    MemorySize: 256
+
+Resources:
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda-authorizer/
+      Handler: index.handler
+      Description: Valida JWT y consulta Tenancy (bd_tenancy_planes)
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref SecretArn
+          TENANCY_DB_NAME: !Ref TenancyDbName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref SecretArn
+      # Si la Lambda consulta RDS, descomentar y asignar VPC + security group con acceso a RDS
+      # VpcConfig:
+      #   SecurityGroupIds: [ !Ref LambdaSg ]
+      #   SubnetIds: !Ref PrivateSubnetIds
+
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: qinspecting-api
+      StageName: !Ref StageName
+      CorsConfiguration:
+        AllowOrigins:
+          - https://app.qinspecting.com
+          - http://localhost:3000
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+          - X-Id-Empresa
+        MaxAge: 3600
+      Auth:
+        Authorizers:
+          JwtTenancyAuthorizer:
+            EnableSimpleResponses: true
+            Identity:
+              Header: Authorization
+            AuthorizerPayloadFormatVersion: '2.0'
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            FunctionInvokeRole: !GetAtt AuthorizerInvokeRole.Arn
+        DefaultAuthorizer: JwtTenancyAuthorizer
+      # Rutas e integraciones: añadir en consola o con CLI según api-gateway-rutas.md
+      # No se incluye DefinitionBody para no requerir AlbUrl en el primer deploy
+
+  AuthorizerInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+
+  AuthorizerInvokePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: InvokeAuthorizer
+      Roles: [ !Ref AuthorizerInvokeRole ]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !GetAtt AuthorizerFunction.Arn
+
+Outputs:
+  ApiEndpoint:
+    Description: URL del HTTP API
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+  AuthorizerFunctionArn:
+    Description: ARN del Lambda Authorizer
+    Value: !GetAtt AuthorizerFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-AuthorizerArn'

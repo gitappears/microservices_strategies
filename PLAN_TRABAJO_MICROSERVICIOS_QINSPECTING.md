@@ -318,4 +318,374 @@ Para que los desarrollos por empresa tengan bajo impacto y sean fáciles de “p
 
 ---
 
+## 10. Diagrama de comunicaciones entre microservicios
+
+Esta sección describe el flujo de una petición desde el cliente hasta los microservicios y las **tecnologías** que intervienen en cada capa. Se plantean dos variantes: **AWS** (API Gateway, Lambda, ECS, RDS, SQS) y **Render/Railway** (BFF + servicios contenedorizados).
+
+### 10.1 Flujo general (capas)
+
+```
+[Cliente Web/App]
+       │
+       ▼
+[API Gateway / BFF]  ← valida JWT, extrae id_empresa
+       │
+       ├──► [Tenancy/Planes]  ← "¿empresa activa?" → si no → 403
+       │
+       ▼ (si activa)
+[Enrutado por path o subdominio]
+       │
+       ├──► Auth/Login        → (opcional) Lambda / servicio Auth
+       ├──► Personal          → NestJS + bd_personal
+       ├──► Inspecciones      → NestJS + bd_inspecciones  ──► llama a Personal (REST)
+       ├──► Mantenimientos    → NestJS + bd_mantenimientos ──► llama a Personal, Flota (REST)
+       ├──► Inventario        → NestJS + bd_inventario     ──► llama a Personal (REST)
+       ├──► Capacitaciones    → NestJS + bd_capacitaciones ──► llama a Personal (REST)
+       └──► Flota/Documentos  → NestJS + bd_flota_documentos
+```
+
+### 10.2 Diagrama Mermaid – Comunicaciones (vista lógica)
+
+```mermaid
+flowchart TB
+    subgraph Cliente["🖥️ Cliente"]
+        Web["Web / App móvil"]
+    end
+
+    subgraph Entrada["🔐 Capa de entrada"]
+        GW["API Gateway<br/>o BFF"]
+    end
+
+    subgraph Validacion["✓ Validación"]
+        Tenancy["Servicio Tenancy/Planes<br/>¿empresa activa?"]
+    end
+
+    subgraph Servicios["Microservicios"]
+        Auth["Auth / Users<br/>(JWT, login)"]
+        Personal["Personal<br/>bd_personal"]
+        Inspecciones["Inspecciones<br/>bd_inspecciones"]
+        Mantenimientos["Mantenimientos<br/>bd_mantenimientos"]
+        Inventario["Inventario<br/>bd_inventario"]
+        Capacitaciones["Capacitaciones<br/>bd_capacitaciones"]
+        Flota["Flota / Documentos<br/>bd_flota_documentos"]
+    end
+
+    subgraph Bases["Bases de datos"]
+        BD_T["bd_tenancy_planes"]
+        BD_P["bd_personal"]
+        BD_I["bd_inspecciones"]
+        BD_M["bd_mantenimientos"]
+        BD_INV["bd_inventario"]
+        BD_C["bd_capacitaciones"]
+        BD_F["bd_flota_documentos"]
+    end
+
+    subgraph Async["Asíncrono (opcional)"]
+        SQS["Cola (SQS / RabbitMQ)"]
+        Worker["Worker / Lambda<br/>notificaciones, reportes"]
+    end
+
+    Web -->|"HTTPS"| GW
+    GW -->|"1. Consulta estado"| Tenancy
+    Tenancy --> BD_T
+    Tenancy -->|"403 si suspendida"| Web
+    GW -->|"2. Si activa, enruta"| Auth
+    GW -->|"2. Si activa, enruta"| Personal
+    GW -->|"2. Si activa, enruta"| Inspecciones
+    GW -->|"2. Si activa, enruta"| Mantenimientos
+    GW -->|"2. Si activa, enruta"| Inventario
+    GW -->|"2. Si activa, enruta"| Capacitaciones
+    GW -->|"2. Si activa, enruta"| Flota
+
+    Auth --> BD_P
+    Personal --> BD_P
+    Inspecciones --> BD_I
+    Inspecciones -->|"REST: datos conductor"| Personal
+    Mantenimientos --> BD_M
+    Mantenimientos -->|"REST: conductor, flota"| Personal
+    Mantenimientos -->|"REST: flota"| Flota
+    Inventario --> BD_INV
+    Inventario -->|"REST: personal"| Personal
+    Capacitaciones --> BD_C
+    Capacitaciones -->|"REST: conductor"| Personal
+    Flota --> BD_F
+
+    Inspecciones -.->|"evento (opcional)"| SQS
+    Mantenimientos -.->|"evento (opcional)"| SQS
+    SQS --> Worker
+```
+
+### 10.3 Diagrama Mermaid – Tecnologías AWS (ejemplo concreto)
+
+```mermaid
+flowchart LR
+    subgraph Internet["Internet"]
+        Client["Cliente"]
+    end
+
+    subgraph AWS["AWS"]
+        subgraph Edge["Edge / Entrada"]
+            CF["CloudFront<br/>(CDN, opcional)"]
+            APIGW["API Gateway<br/>REST o HTTP API"]
+        end
+
+        subgraph Compute["Compute"]
+            LambdaAuth["Lambda<br/>Auth + Tenancy check"]
+            LambdaBFF["Lambda<br/>BFF (opcional)"]
+            ECS["ECS Fargate<br/>NestJS x N servicios"]
+        end
+
+        subgraph Data["Datos"]
+            RDS["RDS MySQL<br/>(1 instancia, N bases)"]
+        end
+
+        subgraph Async["Eventos"]
+            SQS["SQS"]
+            LambdaWorker["Lambda<br/>consumidor"]
+        end
+    end
+
+    Client -->|HTTPS| CF
+    CF --> APIGW
+    APIGW -->|"Autorizer / integración"| LambdaAuth
+    LambdaAuth -->|"Valida JWT, consulta Tenancy"| RDS
+    APIGW -->|"Proxy / route"| LambdaBFF
+    LambdaBFF -->|"HTTP"| ECS
+    APIGW -->|"O enrutar directo"| ECS
+    ECS --> RDS
+    ECS -.->|"Publica evento"| SQS
+    SQS --> LambdaWorker
+    LambdaWorker --> RDS
+```
+
+**Leyenda tecnologías AWS:**
+
+| Capa | Tecnología | Rol |
+|------|------------|-----|
+| **Entrada** | **CloudFront** | CDN, cache, HTTPS terminator (opcional). |
+| **API** | **API Gateway** (REST o HTTP API) | Punto único de entrada, throttling, CORS, autorizadores (Lambda authorizer para JWT y consulta Tenancy). |
+| **Auth/Tenancy** | **Lambda** (Authorizer + posible BFF) | Valida JWT, extrae `id_empresa`, llama a Tenancy “¿activa?”; si no → 403. Opcional: BFF en Lambda que agregue llamadas a varios servicios. |
+| **Microservicios** | **ECS Fargate** (o EKS, o Lambda por servicio) | Contenedores NestJS, uno por dominio (Personal, Inspecciones, Mantenimientos, etc.). Cada uno con su DATABASE_URL (misma RDS, bases distintas). |
+| **Bases de datos** | **RDS MySQL** (o Aurora) | Una instancia/cluster; varias bases (bd_tenancy_planes, bd_personal, bd_inspecciones, …). |
+| **Asíncrono** | **SQS** + **Lambda** | Cola para eventos (ej. “inspección cerrada”, “orden mtto cerrada”); Lambda consume y envía notificaciones o genera reportes. |
+| **Secrets** | **Secrets Manager** o **Parameter Store** | Credenciales BD, JWT secret, API keys entre servicios. |
+
+### 10.4 Orden sugerido de tecnologías en una petición (AWS)
+
+1. **Cliente** → HTTPS → **CloudFront** (opcional).  
+2. **CloudFront** → **API Gateway** (REST/HTTP API).  
+3. **API Gateway** → **Lambda Authorizer**: valida JWT, extrae `id_empresa`, llama a **Tenancy** (otra Lambda o ECS) o lee de **RDS** (bd_tenancy_planes); devuelve política IAM/allow/deny.  
+4. Si **allow**: **API Gateway** enruta por path (ej. `/personal/*`, `/inspecciones/*`) a:  
+   - **Integración HTTP** → ALB → **ECS** (servicio NestJS correspondiente), o  
+   - **Lambda BFF** que hace varias llamadas HTTP a ECS y agrega respuesta.  
+5. **Servicio ECS** (ej. Inspecciones) → lee/escribe en **RDS** (bd_inspecciones); si necesita datos de conductor → llama por **HTTP** al servicio **Personal** (ECS o Lambda).  
+6. (Opcional) Servicio publica mensaje a **SQS** → **Lambda** consumidora → notificaciones o reportes.
+
+### 10.5 Variante Render / Railway (sin API Gateway AWS)
+
+- **BFF o Gateway**: un **servicio NestJS** (o Express) desplegado como Web Service que recibe todo el tráfico, valida JWT, consulta Tenancy (otro servicio o misma app), y hace **proxy** o **llamadas internas** a los demás servicios.  
+- **Servicios**: cada dominio = un **Web Service** (contenedor) con su `DATABASE_URL`.  
+- **Bases de datos**: **Render PostgreSQL/MySQL** o **Railway PostgreSQL/MySQL** (una base por sistema).  
+- **Colas**: **Render Redis** o **Railway** add-on para colas; o servicio worker en el mismo stack que consuma desde Redis/DB.  
+
+No hay “API Gateway” ni “Lambda” como en AWS; la capa de entrada y la lógica de tenancy viven en el **BFF** o en un **servicio Gateway** contenedorizado.
+
+### 10.6 Resumen: tecnologías que intervienen
+
+| Orden | Componente | Tecnología (AWS) | Tecnología (Render/Railway) |
+|-------|------------|------------------|-----------------------------|
+| 1 | Entrada única | API Gateway (REST/HTTP API) | BFF NestJS (Web Service) |
+| 2 | Auth + Tenancy | Lambda Authorizer + Lambda/ECS Tenancy | Middleware en BFF + servicio Tenancy o mismo BFF |
+| 3 | Enrutado | API Gateway routes → integración HTTP/ALB | BFF proxy o llamadas HTTP internas a servicios |
+| 4 | Microservicios | ECS Fargate (NestJS) o Lambda por dominio | Web Services (NestJS), uno por dominio |
+| 5 | Bases de datos | RDS MySQL (varias bases) | Render DB / Railway MySQL o Postgres (una por sistema) |
+| 6 | Comunicación servicio–servicio | HTTP/REST (ALB interno o Service Connect) | HTTP/REST (URL interna entre servicios) |
+| 7 | Eventos asíncronos | SQS + Lambda | Redis + Worker o cola gestionada |
+| 8 | Secrets | Secrets Manager / Parameter Store | Variables de entorno del servicio |
+
+---
+
+## 11. Arquitectura AWS al detalle
+
+Esta sección detalla **solo AWS**: componentes, configuración sugerida y flujo de una petición de punta a punta. Para **plantillas SAM, código del Lambda Authorizer y configuración de rutas de API Gateway**, ver el documento y los archivos en **[arquitectura_aws/](arquitectura_aws/README.md)**.
+
+### 11.1 Vista de arquitectura AWS (diagrama)
+
+```mermaid
+flowchart TB
+    subgraph Internet["Internet"]
+        User["Usuario / App"]
+    end
+
+    subgraph AWS_Cloud["AWS Cloud"]
+        subgraph Edge["Edge"]
+            CF["CloudFront<br/>SSL, cache"]
+        end
+
+        subgraph Public_Subnets["Subnets públicas"]
+            ALB["Application<br/>Load Balancer"]
+        end
+
+        subgraph APIGW_Zone["API Gateway"]
+            APIGW["REST API / HTTP API"]
+            AuthLambda["Lambda Authorizer<br/>JWT + Tenancy"]
+        end
+
+        subgraph Private_Subnets["Subnets privadas - ECS"]
+            SvcTenancy["Tenancy"]
+            SvcPersonal["Personal"]
+            SvcInspec["Inspecciones"]
+            SvcMantto["Mantenimientos"]
+            SvcInv["Inventario"]
+            SvcCap["Capacitaciones"]
+            SvcFlota["Flota/Docs"]
+        end
+
+        subgraph Data_Subnets["Datos"]
+            RDS["RDS MySQL<br/>7 bases"]
+        end
+
+        subgraph Async_AWS["Eventos"]
+            SQS["SQS"]
+            LambdaWorker["Lambda Worker"]
+        end
+    end
+
+    User -->|"HTTPS 443"| CF
+    CF --> APIGW
+    APIGW --> AuthLambda
+    AuthLambda --> RDS
+    APIGW --> ALB
+    ALB --> SvcTenancy
+    ALB --> SvcPersonal
+    ALB --> SvcInspec
+    ALB --> SvcMantto
+    ALB --> SvcInv
+    ALB --> SvcCap
+    ALB --> SvcFlota
+
+    SvcTenancy --> RDS
+    SvcPersonal --> RDS
+    SvcInspec --> RDS
+    SvcInspec --> SvcPersonal
+    SvcMantto --> RDS
+    SvcMantto --> SvcPersonal
+    SvcMantto --> SvcFlota
+    SvcInv --> RDS
+    SvcInv --> SvcPersonal
+    SvcCap --> RDS
+    SvcCap --> SvcPersonal
+    SvcFlota --> RDS
+
+    SvcInspec -.-> SQS
+    SvcMantto -.-> SQS
+    SQS --> LambdaWorker
+    LambdaWorker --> RDS
+```
+
+### 11.2 VPC y redes
+
+| Elemento | Recomendación |
+|----------|----------------|
+| **VPC** | Una VPC por entorno (prod, staging). CIDR ej. `10.0.0.0/16`. |
+| **Subnets públicas** | 2+ AZ (ej. `10.0.1.0/24`, `10.0.2.0/24`). ALB, NAT Gateway. |
+| **Subnets privadas** | 2+ AZ. ECS tasks. |
+| **Subnets RDS** | Mismo par de privadas o subnet group dedicado en 2 AZ. |
+| **NAT Gateway** | En públicas; tareas ECS en privadas lo usan para salida (npm, SQS, APIs externas). |
+
+API Gateway es gestionado (fuera de VPC); se integra con el ALB por HTTP (ALB con IP públicas o VPC Link si ALB es interno).
+
+### 11.3 API Gateway
+
+| Aspecto | Configuración |
+|---------|----------------|
+| **Tipo** | REST API o HTTP API (HTTP API más barato). |
+| **Rutas** | `/{proxy+}` por contexto: `/personal/{proxy+}`, `/inspecciones/{proxy+}`, `/mantenimientos/{proxy+}`, `/inventario/{proxy+}`, `/capacitaciones/{proxy+}`, `/flota/{proxy+}`, `/auth/login`, `/auth/refresh`. |
+| **Autorizador** | Lambda Authorizer (REQUEST). Recibe header Authorization, valida JWT, consulta Tenancy en RDS; devuelve Allow/Deny + context (`id_empresa`). |
+| **Excepciones** | `/auth/login` y `/auth/refresh` sin authorizer (aún no hay token). |
+| **Integración** | HTTP integration a la URL del ALB; reenviar path y query; inyectar header `X-Id-Empresa` desde context del authorizer. |
+| **Throttling** | Límites por etapa; opcional usage plans. |
+
+### 11.4 Lambda Authorizer (Auth + Tenancy)
+
+- **Runtime:** Node.js 20.x.
+- **Entrada:** evento API Gateway (header `Authorization`). Extraer Bearer token.
+- **Lógica:** (1) Sin token → Deny. (2) Verificar JWT (secret en Secrets Manager). (3) Consultar RDS `bd_tenancy_planes`: estado de la empresa (estado_pago, vigente_hasta). (4) Si suspendida/vencida → Deny (403). (5) Si OK → Allow + context `{ id_empresa }`.
+- **RDS:** Lambda en VPC (mismas subnets que RDS) o usar RDS Data API / servicio Tenancy en ECS que consulte RDS.
+- **Secrets:** JWT secret y conexión RDS en Secrets Manager; rol IAM con `secretsmanager:GetSecretValue`.
+
+### 11.5 Application Load Balancer (ALB)
+
+- **Listeners:** HTTPS 443 (certificado ACM). Reglas por path:
+  - `/personal*` → target group Personal
+  - `/inspecciones*` → Inspecciones
+  - `/mantenimientos*` → Mantenimientos
+  - `/inventario*` → Inventario
+  - `/capacitaciones*` → Capacitaciones
+  - `/flota*` → Flota
+  - `/auth*` → Auth/Tenancy
+- **Target groups:** tipo IP (Fargate); puerto 3000; health check `/health`.
+
+### 11.6 ECS Fargate
+
+| Concepto | Configuración |
+|----------|----------------|
+| **Cluster** | Un cluster por entorno. |
+| **Task definition** | Una por servicio. Imagen ECR (NestJS). Env: `DATABASE_URL` (Secrets Manager), `NODE_ENV`, `SERVICE_NAME`. Logs → CloudWatch. |
+| **Servicios** | 7 servicios: tenancy, personal, inspecciones, mantenimientos, inventario, capacitaciones, flota. Cada uno con su target group, 1+ tareas, rolling deployment. |
+| **Comunicación entre servicios** | URL del ALB; ej. `PERSONAL_SERVICE_URL=http://ALB/personal`. Inspecciones llama a Personal vía HTTP al ALB. |
+| **IAM (task role)** | Secrets Manager, CloudWatch Logs, SQS SendMessage (si publican eventos). |
+
+### 11.7 RDS MySQL
+
+- **Motor:** MySQL 8.x (o Aurora MySQL).
+- **Una instancia** por entorno; 7 bases: `bd_tenancy_planes`, `bd_personal`, `bd_inspecciones`, `bd_mantenimientos`, `bd_inventario`, `bd_capacitaciones`, `bd_flota_documentos` (DDL de refactor_ddl).
+- **Security group:** puerto 3306 solo desde security group de ECS (y de Lambda si Lambda en VPC accede a RDS).
+- **Secrets Manager:** credenciales RDS (creadas por RDS al crear instancia).
+
+### 11.8 SQS y Lambda worker
+
+- **Cola:** SQS Standard (o FIFO si se requiere orden). Body: JSON `{ eventType, id_empresa, payload }`.
+- **Publican:** Servicios ECS (Inspecciones, Mantenimientos) con SendMessage.
+- **Consumidor:** Lambda con trigger SQS; según eventType envía notificación o genera reporte; DLQ para fallos.
+
+### 11.9 Secrets Manager y IAM
+
+| Secreto | Uso |
+|---------|-----|
+| RDS credentials | Lambda Authorizer y ECS para MySQL. |
+| JWT_SECRET | Lambda Authorizer y servicio Auth. |
+
+**Roles:** Lambda Authorizer → Secrets Manager (+ VPC si aplica). ECS task role → Secrets Manager, Logs, SQS.
+
+### 11.10 Flujo completo de una petición
+
+1. Usuario: `GET /inspecciones/resumen/123` + header `Authorization: Bearer <JWT>`.
+2. CloudFront (opcional) → API Gateway.
+3. API Gateway invoca Lambda Authorizer con el token.
+4. Lambda Authorizer: valida JWT, consulta Tenancy en RDS; si no activa → Deny (403); si activa → Allow + context `id_empresa`.
+5. API Gateway integración HTTP → ALB ` /inspecciones/resumen/123` + header `X-Id-Empresa`.
+6. ALB → target group Inspecciones → tarea ECS.
+7. Servicio Inspecciones: lee `X-Id-Empresa`, consulta bd_inspecciones; si necesita conductor llama a Personal vía ALB.
+8. Respuesta 200; opcional publicar a SQS.
+9. Lambda por SQS procesa evento si está configurado.
+
+### 11.11 Checklist de despliegue AWS
+
+- [ ] VPC, subnets, NAT Gateway.
+- [ ] RDS MySQL: instancia, 7 bases (refactor_ddl), security group.
+- [ ] Secrets Manager: RDS, JWT_SECRET.
+- [ ] ECR: repositorios por servicio (o una imagen multi-servicio).
+- [ ] ECS: cluster, 7 task definitions, 7 servicios, target groups.
+- [ ] ALB: listener HTTPS, reglas por path.
+- [ ] API Gateway: API, rutas, Lambda Authorizer, integración HTTP al ALB; sin authorizer en /auth/login y /auth/refresh.
+- [ ] Lambda Authorizer: código, rol, VPC si accede a RDS.
+- [ ] CloudFront (opcional): origen API Gateway, dominio custom, ACM.
+- [ ] SQS + Lambda consumer + permisos ECS.
+- [ ] CI/CD: build imágenes, actualizar servicios ECS.
+
+**Plantillas y código de implementación en AWS:** ver [Arquitectura AWS – Implementación](arquitectura_aws/README.md) (Lambda Authorizer, plantilla SAM, rutas de API Gateway).
+
+---
+
 *Documento generado a partir del análisis del workspace `bases_qinspecting` y del backend `qinspecting_api_nest`. Última actualización: Febrero 2026.*

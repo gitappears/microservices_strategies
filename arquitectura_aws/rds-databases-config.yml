@@ -1,0 +1,30 @@
+# Configuración de bases de datos para RDS QInspecting
+# Ref: PLAN_TRABAJO_MICROSERVICIOS_QINSPECTING.md §2.1, §3.2
+#
+# Uso:
+#   - Con refactor_ddl/crear_bases_y_schema.sh (lee esta lista implícita).
+#   - En pipelines/scripts que ejecuten CREATE DATABASE por cada entrada.
+#   - Con herramientas que acepten YAML para provisionar bases.
+
+defaults:
+  charset: utf8mb4
+  collation: utf8mb4_unicode_ci
+
+databases:
+  - name: bd_tenancy_planes
+    description: Empresas, planes, planes_empresas, estado de pago, mensajes
+  - name: bd_personal
+    description: Personal centralizado, catálogos (cargos, tipo doc, ciudad)
+  - name: bd_inspecciones
+    description: Inspecciones preoperacional, ítems, adjuntos, llantas
+  - name: bd_mantenimientos
+    description: Órdenes de servicio, rutinas, programación mtto, fallas
+  - name: bd_inventario
+    description: Almacenes, entradas/salidas, traslados, solicitudes
+  - name: bd_capacitaciones
+    description: Capacitaciones, preguntas, respuestas, evidencias, certificados
+  - name: bd_flota_documentos
+    description: Vehículos, remolques, cabezotes, documentos, firmas
+
+# SQL equivalente (para referencia):
+# CREATE DATABASE IF NOT EXISTS <name> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

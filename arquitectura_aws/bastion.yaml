@@ -1,0 +1,74 @@
+# Bastión EC2 para acceder a RDS en subnets privadas
+# SSH al bastión, luego desde el bastión: mysql -h <RDS_ENDPOINT> -u ...
+#
+# Despliegue:
+#   aws cloudformation deploy --template-file bastion.yaml --stack-name qinspecting-bastion \
+#     --parameter-overrides VpcId=vpc-xxx PublicSubnetId=subnet-xxx KeyName=qinspecting-bastion BastionAllowedCidr=TU_IP/32
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bastion EC2 para QInspecting - acceso SSH y desde ahi a RDS
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC donde está RDS
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet pública (con ruta a IGW) para el bastión
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Nombre del key pair para SSH
+  BastionAllowedCidr:
+    Type: String
+    Default: "0.0.0.0/0"
+    Description: CIDR permitido para SSH (recomendado tu IP/32, ej. 1.2.3.4/32)
+  AmiId:
+    Type: String
+    Default: "ami-0199fa5fada510433"
+    Description: "AMI Amazon Linux 2 (us-east-1); cambiar si usas otra region"
+
+Resources:
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SSH para bastion QInspecting
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref BastionAllowedCidr
+      Tags:
+        - Key: Name
+          Value: qinspecting-bastion-sg
+
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnetId
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      KeyName: !Ref KeyName
+      AssociatePublicIpAddress: true
+      Tags:
+        - Key: Name
+          Value: qinspecting-bastion
+        - Key: Project
+          Value: qinspecting
+
+Outputs:
+  BastionPublicIp:
+    Description: IP pública del bastión (conectar por SSH)
+    Value: !GetAtt BastionHost.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-BastionPublicIp"
+  BastionSecurityGroupId:
+    Description: Security Group del bastion (autorizar 3306 en el SG de RDS desde este)
+    Value: !Ref BastionSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-BastionSgId"
+  ConnectCommand:
+    Description: Ejemplo de conexión SSH
+    Value: !Sub "ssh -i <tu-.pem> ec2-user@${BastionHost.PublicIp}"

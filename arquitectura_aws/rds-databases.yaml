@@ -1,0 +1,108 @@
+# CloudFormation: RDS MySQL 8 para QInspecting (7 bases por sistema)
+# Ref: PLAN_TRABAJO_MICROSERVICIOS_QINSPECTING.md §11.7, arquitectura_aws/README.md
+#
+# Tras el deploy, crear las bases con:
+#   refactor_ddl/crear_bases_y_schema.sh <RDS_ENDPOINT> <MasterUsername> <MasterPassword>
+# o usando el archivo rds-databases-config.yml en tu pipeline.
+#
+# Despliegue:
+#   aws cloudformation deploy --template-file rds-databases.yaml --stack-name qinspecting-rds \
+#     --parameter-overrides VpcId=vpc-xxx PrivateSubnetIds=subnet-1,subnet-2 MasterUserPassword=xxx
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  QInspecting - Instancia RDS MySQL 8 para las 7 bases por sistema
+  (bd_tenancy_planes, bd_personal, bd_inspecciones, bd_mantenimientos,
+   bd_inventario, bd_capacitaciones, bd_flota_documentos).
+  Tras el deploy, ejecutar refactor_ddl/crear_bases_y_schema.sh con el endpoint.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC donde se desplegará RDS
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets privadas (2 AZ recomendado) para RDS
+  DBSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security Group que permite acceso a RDS (ej. desde ECS/Lambda). Debe permitir ingress 3306 desde los consumidores.
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.t4g.micro
+      - db.t4g.small
+    Description: Clase de instancia RDS
+  AllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 65536
+    Description: Almacenamiento en GB
+  MasterUsername:
+    Type: String
+    Default: qinspect_admin
+    Description: Usuario maestro de RDS
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    Description: Contraseña del usuario maestro (mín. 8 caracteres)
+  EnvironmentName:
+    Type: String
+    Default: prod
+    Description: Nombre del entorno (prod, staging, etc.)
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets para RDS QInspecting
+      SubnetIds: !Ref PrivateSubnetIds
+
+  QInspectingDB:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub 'qinspecting-${EnvironmentName}'
+      Engine: mysql
+      EngineVersion: "8.0"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroupId
+      MultiAZ: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "03:00-04:00"
+      # CharacterSetName no soportado en MySQL 8.0 al crear; por defecto es utf8mb4. Definir charset por base con crear_bases_y_schema.sh / rds-databases-config.yml
+      PubliclyAccessible: false
+      Tags:
+        - Key: Name
+          Value: !Sub 'qinspecting-rds-${EnvironmentName}'
+        - Key: Project
+          Value: qinspecting
+
+Outputs:
+  RDSEndpoint:
+    Description: Endpoint de la instancia RDS MySQL
+    Value: !GetAtt QInspectingDB.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-RDSEndpoint'
+  RDSPort:
+    Description: Puerto de la instancia RDS
+    Value: !GetAtt QInspectingDB.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-RDSPort'
+  MasterUsername:
+    Description: Usuario maestro (no exponer en producción)
+    Value: !Ref MasterUsername
+  DatabasesToCreate:
+    Description: Bases a crear tras el deploy (usar con refactor_ddl/crear_bases_y_schema.sh)
+    Value: bd_tenancy_planes,bd_personal,bd_inspecciones,bd_mantenimientos,bd_inventario,bd_capacitaciones,bd_flota_documentos

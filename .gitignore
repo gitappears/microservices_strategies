@@ -1,0 +1,3 @@
+# Claves privadas (bastión, etc.)
+*.pem
+arquitectura_aws/*.pem

@@ -149,6 +149,33 @@ Las FK “entre bases” no existen a nivel SQL; la consistencia se mantiene por
 
 Recomendación: **Fase 1 con Opción A** (monolito con múltiples BDs y módulos bien acotados), **Fase 2** extraer a servicios independientes (Opción B) cuando la migración de datos y la normalización estén estables.
 
+### 4.1.1 Viabilidad: un solo servicio → 8 bases → después microservicios
+
+**¿Es viable?** Sí, y es la ruta recomendada en el plan.
+
+| Aspecto | Un servicio con 8 BDs | Después: servicios independientes |
+|--------|------------------------|-----------------------------------|
+| **Conexiones** | Nest + TypeORM con **varios DataSource** (uno por base). Cada módulo usa `TypeOrmModule.forFeature([...], 'nombreDataSource')`. | Cada servicio tiene **una** conexión a su BD. |
+| **Variables de entorno** | `DATABASE_HOST`, `DATABASE_NAME` (o `DATABASE_URL`) por base, ej. `DB_TENANCY_NAME`, `DB_PERSONAL_NAME`, … o un prefijo por DataSource. | Por servicio: solo las de su propia BD y las de llamadas a otros servicios (URLs, API keys). |
+| **Límites de dominio** | Cada módulo (Personal, Preoperacional, Vehiculos, etc.) **solo** usa su DataSource. Evitar que un módulo inyecte repos de otra BD. | El mismo límite: un servicio = un dominio = una BD. Al extraer, el módulo se convierte en servicio. |
+| **Llamadas entre dominios** | En el monolito: inyección de un servicio de otro módulo (ej. Inspecciones llama a PersonalService). Preferir **interfaces/contratos** (puertos) para que luego se pueda sustituir por HTTP. | Llamadas HTTP (REST) o eventos (SQS, RabbitMQ). El contrato ya existe si se definieron interfaces. |
+| **Transacciones** | No hacer transacciones que abarquen **dos bases** (TypeORM no une transacciones entre DataSources). Si hace falta, coordinar por aplicación (patrón saga) o aceptar consistencia eventual. | Igual: entre servicios no hay transacciones distribuidas; se usan sagas o eventos. |
+| **Auth / tenant** | Un solo middleware/guard: valida JWT, inyecta `id_empresa` en request. Todos los módulos lo usan. | Cada servicio valida el token (o recibe un token interno del Gateway). El tenant (`id_empresa`) va en header o JWT. |
+
+**Qué facilita la separación después:**
+
+1. **Un módulo Nest = un bounded context** (Personal, Inspecciones, Inventario, etc.) con sus controladores, servicios y repositorios. Al extraer, ese módulo se lleva a un nuevo repo/servicio y expone REST; el resto lo llama por HTTP.
+2. **Evitar acoplamiento directo entre BDs**: que Inspecciones no escriba en tablas de Personal; que use el PersonalService (o un cliente HTTP futuro) para leer datos de personas.
+3. **Contratos estables**: DTOs y respuestas de API ya definidos; al pasar a microservicios, el mismo contrato se expone como REST y el llamador usa un cliente HTTP en lugar del servicio inyectado.
+4. **Migraciones**: en el monolito puedes tener una migración por DataSource (o un script por base). Al separar, cada servicio lleva sus propias migraciones.
+
+**Riesgos a tener en cuenta:**
+
+- **Transacciones entre bases**: si hoy hay lógica que escribe en dos BDs en “una transacción”, al tener 8 bases hay que rediseñarla (saga, colas, o aceptar eventual consistency). Mejor no introducir nuevas transacciones cross-DB.
+- **Auth/Users**: si Users/Login vive en una BD (ej. bd_personal o bd_tenancy_planes), el resto de módulos solo consumen “quién es” vía JWT; al separar, un servicio Auth o el Gateway emite/valida el token y los demás servicios confían en él.
+
+En resumen: **montar un solo servicio que se conecte a las 8 bases es viable** (TypeORM multi-DataSource + módulos por dominio). Si se mantienen fronteras claras y se evitan transacciones entre bases, **separar después en microservicios** es principalmente mover módulos a repos/servicios y reemplazar llamadas in-process por HTTP o eventos.
+
 ### 4.2 Servicios objetivo (cuando se extraigan)
 
 | Servicio | Responsabilidad | Base de datos |

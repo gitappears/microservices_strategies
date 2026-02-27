@@ -273,4 +273,69 @@ CREATE TABLE IF NOT EXISTS `inv_has_articulo_almacen` (
   KEY `idx_inv_has_empresa` (`id_empresa`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -----------------------------------------------------------------------------
+-- Proveedores (dominio inventario/compras; id_empresa = tenant)
+-- Referencia: inv_enc_orden_compra.id_proveedor -> prov_proveedor.id_prov
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `prov_proveedor` (
+  `id_prov` INT(20) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `nombre_prov` VARCHAR(50) NOT NULL,
+  `numero_doc_prov` INT(20) NOT NULL,
+  `celular_prov` VARCHAR(15) NOT NULL,
+  `email_prov` VARCHAR(200) DEFAULT NULL,
+  `estado_prov` TINYINT(2) NOT NULL DEFAULT 1,
+  `tipo_doc_id` INT(20) NOT NULL,
+  `tipo_cliente_prov` ENUM('PROVEEDOR','CLIENTE','EM') NOT NULL DEFAULT 'PROVEEDOR',
+  `tipo_provee` ENUM('BIENES','SERVICIOS') NOT NULL,
+  `id_regimen` INT(11) NOT NULL,
+  `fecha_control` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `usuario_control` VARCHAR(50) NOT NULL,
+  PRIMARY KEY (`id_prov`, `id_empresa`),
+  KEY `idx_prov_empresa` (`id_empresa`),
+  KEY `idx_prov_estado` (`estado_prov`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Proveedores (dominio inventario)';
+
+CREATE TABLE IF NOT EXISTS `prov_sucursales_prov` (
+  `id_sucursal` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `id_prov_sucursal` INT(20) NOT NULL COMMENT 'prov_proveedor.id_prov',
+  `id_ciudad` INT(11) NOT NULL,
+  `direccion` VARCHAR(500) NOT NULL,
+  `nombre_contacto_sucursal` VARCHAR(100) NOT NULL,
+  `telefono_contacto_sucursal` VARCHAR(15) NOT NULL,
+  `estado_sucursal` TINYINT(1) NOT NULL DEFAULT 1,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id_sucursal`, `id_empresa`),
+  KEY `idx_prov_suc_empresa` (`id_empresa`),
+  KEY `idx_prov_suc_proveedor` (`id_prov_sucursal`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Sucursales de proveedores';
+
+CREATE TABLE IF NOT EXISTS `prov_evaluacion_proveedor_enc` (
+  `id_enc_evaluacion` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `id_proveedor` INT(20) NOT NULL,
+  `fecha_evaluacion` DATE NOT NULL,
+  `calificacion_final` FLOAT(5,2) NOT NULL,
+  `observaciones` VARCHAR(1000) DEFAULT NULL,
+  `fecha_control` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `usuario_control` VARCHAR(50) NOT NULL,
+  PRIMARY KEY (`id_enc_evaluacion`),
+  KEY `idx_prov_eval_empresa` (`id_empresa`),
+  KEY `idx_prov_eval_proveedor` (`id_proveedor`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Encabezado evaluación de proveedores';
+
+CREATE TABLE IF NOT EXISTS `prov_det_evaluacion_proveedor` (
+  `id_enc_evaluacion` INT(11) NOT NULL,
+  `id_criterio` INT(11) NOT NULL COMMENT 'cat_criterio_evaluacion_em.id',
+  `calificacion` FLOAT(5,2) NOT NULL,
+  PRIMARY KEY (`id_enc_evaluacion`, `id_criterio`),
+  KEY `idx_prov_det_enc` (`id_enc_evaluacion`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Detalle evaluación por criterio';
+
 SET FOREIGN_KEY_CHECKS = 1;

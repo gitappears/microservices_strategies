@@ -301,4 +301,43 @@ CREATE TABLE IF NOT EXISTS `cap_material_capacitacion` (
   KEY `idx_cap_mat_capacitacion` (`capacitacion_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =============================================================================
+-- Encuestas: cualquier curso puede tener una encuesta (fk_id_capacitacion)
+-- 0 = encuesta no vinculada a curso; si > 0 referencia cap_capacitacion.idCapacitacion
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS `enc_encuesta` (
+  `id_encuesta` INT(19) NOT NULL,
+  `tema` VARCHAR(500) NOT NULL,
+  `enunciado` VARCHAR(2000) NOT NULL,
+  `fecha_inicio` DATE NOT NULL,
+  `fecha_fin` DATE NOT NULL,
+  `creado` INT(20) NOT NULL,
+  `estado` TINYINT(1) NOT NULL DEFAULT 1,
+  `fk_id_capacitacion` INT(11) NOT NULL DEFAULT 0 COMMENT '0=no vinculada a curso; si >0 -> cap_capacitacion.idCapacitacion',
+  `requiere_inicio` TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id_encuesta`),
+  KEY `idx_enc_enc_capacitacion` (`fk_id_capacitacion`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Encuestas; opcionalmente asociadas a un curso (cualquier curso puede tener una)';
+
+CREATE TABLE IF NOT EXISTS `enc_preguntas_encuesta` (
+  `id_pregunta` INT(19) NOT NULL,
+  `id_encuesta` INT(19) NOT NULL,
+  `descripcion` VARCHAR(2000) NOT NULL,
+  `tipo_pregunta` INT(11) NOT NULL,
+  PRIMARY KEY (`id_pregunta`),
+  KEY `idx_enc_pre_encuesta` (`id_encuesta`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Preguntas de la encuesta';
+
+CREATE TABLE IF NOT EXISTS `enc_respuestas_encuesta` (
+  `id_respuesta` INT(19) NOT NULL,
+  `id_pregunta` INT(19) NOT NULL,
+  `descripcion_respuesta` VARCHAR(2000) NOT NULL,
+  PRIMARY KEY (`id_respuesta`),
+  KEY `idx_enc_res_pregunta` (`id_pregunta`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Opciones de respuesta por pregunta';
+
 SET FOREIGN_KEY_CHECKS = 1;

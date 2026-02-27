@@ -17,6 +17,7 @@ Este directorio contiene los scripts DDL para crear las bases de datos normaliza
 |-------|-----------------------|-------------------------|--------------|
 | 01    | bd_tenancy_planes     | qinspect_planesQi       | Ninguna      |
 | 02    | bd_personal           | personal + catálogos de cada qinspect_new* | id_empresa → tenancy |
+| 08    | bd_catalogos_compartidos | cat_* compartidos (categorías, licencias, calificaciones, etc.) | Ninguna      |
 | 03    | bd_inspecciones       | tablas insp/preop/lla/fes | id_empresa   |
 | 04    | bd_mantenimientos     | tablas man/prog/ejm     | id_empresa   |
 | 05    | bd_inventario         | tablas inv*             | id_empresa   |
@@ -34,12 +35,13 @@ Este directorio contiene los scripts DDL para crear las bases de datos normaliza
 chmod +x crear_bases_y_schema.sh
 ./crear_bases_y_schema.sh [host] [user] [password]
 ```
-Crea las 7 bases (bd_tenancy_planes, bd_personal, bd_inspecciones, bd_mantenimientos, bd_inventario, bd_capacitaciones, bd_flota_documentos) y aplica sus DDL. La carga de datos desde los dumps se hace aparte (ver MAPEO_ORIGEN.md en cada carpeta).
+Crea las 8 bases (bd_tenancy_planes, bd_personal, bd_catalogos_compartidos, bd_inspecciones, bd_mantenimientos, bd_inventario, bd_capacitaciones, bd_flota_documentos) y aplica sus DDL. La carga de datos desde los dumps se hace aparte (ver MAPEO_ORIGEN.md en cada carpeta).
 
 ## Origen de los esquemas
 
 - **qinspect_planesQi** → `01_bd_tenancy_planes`
 - Tablas `personal`, catálogos (departamento, ciudad, area, cargos, tipoDocumento) de cada **qinspect_new*** → `02_bd_personal`
+- Catálogos compartidos (categorías items, licencias, calificaciones EM, etc.) → `08_bd_catalogos_compartidos`
 - Tablas insp/preop/lla/fes → `03_bd_inspecciones`
 - Tablas man/prog/ejm → `04_bd_mantenimientos`
 - Tablas inv* → `05_bd_inventario`

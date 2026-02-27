@@ -338,4 +338,35 @@ CREATE TABLE IF NOT EXISTS `prov_det_evaluacion_proveedor` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Detalle evaluación por criterio';
 
+-- Serial instalado (llanta/ítem en vehículo); origen: serialInstalar. Uso: TireCheck, vistaControlLlantas.
+CREATE TABLE IF NOT EXISTS `inv_serial_instalar` (
+  `id_empresa` INT(11) NOT NULL,
+  `id_producto` INT(11) NOT NULL,
+  `serial` VARCHAR(100) NOT NULL,
+  `id_bodega` INT(11) NOT NULL,
+  `id_lote_serial` INT(2) NOT NULL COMMENT 'referencia categoría',
+  `id_tipo_reserva` INT(11) NOT NULL COMMENT 'referencia propósito',
+  `val_unitario` FLOAT(20,2) NOT NULL,
+  `mm_actual` FLOAT(7,2) NOT NULL,
+  `iva` FLOAT(20,2) NOT NULL,
+  `km_presuntivo` BIGINT(20) NOT NULL,
+  `km_total` BIGINT(20) NOT NULL,
+  `placa_veh_seri` VARCHAR(10) NOT NULL DEFAULT '0' COMMENT '0 si no está asignado',
+  `id_ejecutor_m` INT(11) NOT NULL DEFAULT 0,
+  `id_proy` INT(11) NOT NULL DEFAULT 0,
+  `id_posicion` INT(4) NOT NULL DEFAULT 0 COMMENT '0 si no está asignado',
+  `fecha_fabricacion` DATE NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fk_id_estado_llanta` BIGINT(11) DEFAULT NULL COMMENT 'FK estados llanta (03)',
+  `serial_original` VARCHAR(100) DEFAULT NULL,
+  `ciclo_reencauche` ENUM('NUEVA','R1','R2','R3') DEFAULT 'NUEVA',
+  `id_reencauchadora` INT(11) DEFAULT NULL,
+  PRIMARY KEY (`id_empresa`, `id_producto`, `serial`),
+  KEY `idx_inv_serial_empresa` (`id_empresa`),
+  KEY `idx_inv_serial_placa` (`placa_veh_seri`),
+  KEY `idx_inv_serial_producto` (`id_producto`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Serial instalado en vehículo (TireCheck); origen: serialInstalar';
+
 SET FOREIGN_KEY_CHECKS = 1;

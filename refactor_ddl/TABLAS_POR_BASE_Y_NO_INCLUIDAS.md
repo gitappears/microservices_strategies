@@ -51,6 +51,7 @@ Verificación: qué tablas están en cada `0X_bd_*/00_schema.sql` y qué tablas 
 | insp_adjuntos_inspeccion |
 | insp_inspeccion_llantas |
 | lla_det_inspeccion_llantas |
+| lla_inspeccion_llanta_item |
 | preop_resumen_preoperacional |
 | preop_rta_preoperacional |
 | preop_fallas_solucionadas |
@@ -59,6 +60,14 @@ Verificación: qué tablas están en cada `0X_bd_*/00_schema.sql` y qué tablas 
 | lla_desmontes_llantas |
 | lla_disposicion_final_llantas |
 | lla_estados_llantas |
+| lla_cat_tipo_desgaste |
+| lla_cat_tipo_llantas |
+| lla_cat_tipo_rin |
+| lla_referencias_llanta |
+| lla_historico_procedimientos_llanta |
+| lla_registro_kilometraje_llantas |
+| lla_reencauchadoras |
+| lla_trazabilidad_reencauches |
 | fes_formato_especiales_cat |
 | fes_formato_especiales_cat_item |
 | fes_formato_especiales_enca |
@@ -80,6 +89,11 @@ Verificación: qué tablas están en cada `0X_bd_*/00_schema.sql` y qué tablas 
 | man_articulos |
 | man_fallas |
 | man_fallas_has_item |
+| man_causas |
+| man_frecuencias |
+| man_tareas |
+| man_rutinas_tareas |
+| man_prog_test |
 | man_sistemas |
 | man_rutinas |
 | man_sistemas_has_rutinas |
@@ -90,6 +104,15 @@ Verificación: qué tablas están en cada `0X_bd_*/00_schema.sql` y qué tablas 
 | man_add_enc_orden_servicio |
 | man_prorroga_mtto_prog |
 | man_seri_solu_os |
+| prog_programacion_mtto |
+| prog_programacion_mtto_tareas |
+| prog_programacion_mtto_fallas |
+| prog_programacion_mtto_fallas_causas |
+| prog_programacion_mtto_fallas_rutinas |
+| prog_programacion_mtto_fallas_tareas |
+| prog_programacion_mtto_rutinas |
+| prog_programacion_mtto_rutinas_causas |
+| prog_programacion_mtto_tareas_causas |
 | prog_programacion_mtto_asignacion_em_tareas |
 | prog_historial_estados_asignacion_em_tareas |
 | ejm_ejecutores_mtto_interno |
@@ -100,6 +123,7 @@ Verificación: qué tablas están en cada `0X_bd_*/00_schema.sql` y qué tablas 
 ### 05_bd_inventario
 | Tabla |
 |-------|
+| inv_serial_instalar |
 | inv_almacen_inventario |
 | inv_enc_inventarios |
 | inv_det_inventarios |
@@ -202,3 +226,15 @@ Verificación: qué tablas están en cada `0X_bd_*/00_schema.sql` y qué tablas 
 5. **data-migration.config:** Para tablas que **no** tengan destino en refactor, o bien se excluyen del `migrationOrder` y del mapeo, o se crea el DDL correspondiente y se añade a la migración inicial.
 
 Este documento se puede actualizar cuando se creen nuevas carpetas `0X_bd_*` o se añadan tablas a los DDL existentes.
+
+---
+
+## 5. Vistas de reporting (cross-base)
+
+Vistas que unen tablas de varias bases; DDL en **refactor_ddl/vistas_reporting/**:
+
+| Vista | Descripción | Depende de |
+|-------|-------------|-------------|
+| **lla_vista_control_llantas** / **vistaControlLlantas** | Control llantas (km, vida útil, %) | inv_serial_instalar (05), man_articulos, man_marca_articulos (04), lla_registro_kilometraje_llantas (03) |
+
+Uso: qinspecting, qinspecting-mantenimiento. Ver vistas_reporting/README.md para esquema unificado vs bases separadas.

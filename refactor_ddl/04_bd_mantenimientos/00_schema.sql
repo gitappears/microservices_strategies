@@ -118,6 +118,67 @@ CREATE TABLE IF NOT EXISTS `man_fallas_has_item` (
   KEY `idx_man_fhi_empresa` (`id_empresa`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Maestros mantenimiento (origen: manCausas, manFrecuencias, manTareas)
+CREATE TABLE IF NOT EXISTS `man_causas` (
+  `id` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `nombre` VARCHAR(50) NOT NULL,
+  `tipo_mostrar` TINYINT(1) NOT NULL,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`, `id_empresa`),
+  KEY `idx_man_causas_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Causas mantenimiento; origen: manCausas';
+
+CREATE TABLE IF NOT EXISTS `man_frecuencias` (
+  `id` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `nombre` VARCHAR(50) NOT NULL,
+  `sigla` VARCHAR(10) NOT NULL,
+  `habilitado` TINYINT(4) NOT NULL,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`, `id_empresa`),
+  KEY `idx_man_frec_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Frecuencias mantenimiento; origen: manFrecuencias';
+
+CREATE TABLE IF NOT EXISTS `man_tareas` (
+  `id` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `codigo` VARCHAR(50) NOT NULL,
+  `nombre` VARCHAR(50) NOT NULL,
+  `frecuencia` INT(10) NOT NULL,
+  `tipo_frecuencia` INT(11) NOT NULL,
+  `sistema` INT(11) NOT NULL,
+  `tipo_mostrar` TINYINT(4) NOT NULL,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`, `id_empresa`),
+  KEY `idx_man_tareas_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tareas mantenimiento; origen: manTareas';
+
+-- Rutina–Tarea (origen: manRutinasTareas)
+CREATE TABLE IF NOT EXISTS `man_rutinas_tareas` (
+  `id` INT(11) NOT NULL,
+  `id_rutina` INT(11) NOT NULL,
+  `id_tarea` INT(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_man_rt_rutina` (`id_rutina`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tareas por rutina; origen: manRutinasTareas';
+
+-- Pruebas programación (origen: manProgTest)
+CREATE TABLE IF NOT EXISTS `man_prog_test` (
+  `plate` VARCHAR(50) NOT NULL DEFAULT '',
+  `initial_date` DATE NOT NULL,
+  `finish_date` DATE NOT NULL,
+  PRIMARY KEY (`plate`, `initial_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Pruebas programación por placa; origen: manProgTest';
+
 CREATE TABLE IF NOT EXISTS `man_sistemas` (
   `id_sistema` INT(11) NOT NULL AUTO_INCREMENT,
   `id_empresa` INT(11) NOT NULL,
@@ -241,7 +302,99 @@ CREATE TABLE IF NOT EXISTS `man_seri_solu_os` (
   KEY `idx_man_seri_det` (`fk_id_det_solucion`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Programación mtto (si existe en origen)
+-- Programación mtto (cabecera y tareas por programación; origen: programacion_mtto, programacion_mtto_tareas)
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto` (
+  `id` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `fecha_inicio` DATE NOT NULL,
+  `fecha_fin` DATE NOT NULL,
+  `placa` VARCHAR(10) NOT NULL,
+  `reprogramado` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'cambia si fecha_inicio difiere a la nueva',
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_empresa` (`id_empresa`),
+  KEY `idx_prog_mtto_placa` (`placa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Cabecera programación mantenimiento; origen: programacion_mtto';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_tareas` (
+  `id` INT(11) NOT NULL,
+  `id_programacion` INT(11) NOT NULL,
+  `id_tarea` INT(11) NOT NULL,
+  `tipo_mtto` ENUM('PREVENTIVO','PREDICTIVO','CORRECTIVO') NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_tareas_prog` (`id_programacion`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tareas por programación mtto; origen: programacion_mtto_tareas';
+
+-- Programación mtto: fallas y rutinas por programación (origen: programacion_mtto_fallas, programacion_mtto_rutinas, etc.)
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_fallas` (
+  `id` INT(11) NOT NULL,
+  `id_programacion` INT(11) NOT NULL,
+  `id_item_falla` INT(20) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_fallas_prog` (`id_programacion`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Fallas por programación mtto; origen: programacion_mtto_fallas';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_fallas_causas` (
+  `id` INT(11) NOT NULL,
+  `id_mtto_falla` INT(11) NOT NULL,
+  `id_causa` INT(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_fallas_causas_falla` (`id_mtto_falla`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Causas por falla programación; origen: programacion_mtto_fallas_causas';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_fallas_rutinas` (
+  `id` INT(11) NOT NULL,
+  `id_falla_program` INT(11) NOT NULL,
+  `id_rutina` INT(11) NOT NULL,
+  `tipo_mtto` ENUM('PREVENTIVO','PREDICTIVO','CORRECTIVO') NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_fallas_rut_falla` (`id_falla_program`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Rutinas por falla programación; origen: programacion_mtto_fallas_rutinas';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_fallas_tareas` (
+  `id` INT(11) NOT NULL,
+  `id_falla_program` INT(11) NOT NULL,
+  `id_tarea` INT(11) NOT NULL,
+  `tipo_mtto` ENUM('PREVENTIVO','PREDICTIVO','CORRECTIVO') NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_fallas_tareas_falla` (`id_falla_program`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tareas por falla programación; origen: programacion_mtto_fallas_tareas';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_rutinas` (
+  `id` INT(11) NOT NULL,
+  `id_programacion` INT(11) NOT NULL,
+  `id_rutina` INT(11) NOT NULL,
+  `tipo_mtto` ENUM('PREVENTIVO','PREDICTIVO','CORRECTIVO') NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_rutinas_prog` (`id_programacion`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Rutinas por programación mtto; origen: programacion_mtto_rutinas';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_rutinas_causas` (
+  `id` INT(11) NOT NULL,
+  `id_mtto_rutina` INT(11) NOT NULL,
+  `id_causa` INT(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_rutinas_causas_rutina` (`id_mtto_rutina`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Causas por rutina programación; origen: programacion_mtto_rutinas_causas';
+
+CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_tareas_causas` (
+  `id` INT(11) NOT NULL,
+  `id_mtto_tarea` INT(11) NOT NULL,
+  `id_causa` INT(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_prog_mtto_tareas_causas_tarea` (`id_mtto_tarea`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Causas por tarea programación; origen: programacion_mtto_tareas_causas';
+
 CREATE TABLE IF NOT EXISTS `prog_programacion_mtto_asignacion_em_tareas` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
   `id_empresa` INT(11) NOT NULL,

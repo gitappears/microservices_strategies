@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS `insp_inspeccion_llantas` (
   KEY `idx_insp_llantas_empresa` (`id_empresa`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Lla: detalle inspección llantas
+-- Lla: detalle inspección llantas (mediciones externa/central/interna; origen: detInspeccionLlantas)
 CREATE TABLE IF NOT EXISTS `lla_det_inspeccion_llantas` (
   `id_detalle` BIGINT(15) NOT NULL,
   `id_enc_insp` BIGINT(15) NOT NULL,
@@ -56,6 +56,22 @@ CREATE TABLE IF NOT EXISTS `lla_det_inspeccion_llantas` (
   PRIMARY KEY (`id_detalle`),
   KEY `idx_lla_det_enc` (`id_enc_insp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Lla: ítem inspección por llanta - una fila por llanta con JSON e imagen (origen: inspeccionLlantas)
+CREATE TABLE IF NOT EXISTS `lla_inspeccion_llanta_item` (
+  `id_enc_insp` BIGINT(15) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `placa` VARCHAR(10) NOT NULL,
+  `id_producto` INT(11) NOT NULL,
+  `serial_llanta` VARCHAR(36) NOT NULL,
+  `json_informacion` LONGTEXT NOT NULL,
+  `id_url_llanta` INT(11) NOT NULL,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_enc_insp`, `serial_llanta`),
+  KEY `idx_lla_inspeccion_item_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Una fila por llanta en la inspección (JSON + URL imagen); origen: inspeccionLlantas';
 
 -- Preop: resumen preoperacional
 CREATE TABLE IF NOT EXISTS `preop_resumen_preoperacional` (
@@ -178,6 +194,127 @@ CREATE TABLE IF NOT EXISTS `lla_estados_llantas` (
   PRIMARY KEY (`id_estado_llanta`),
   KEY `idx_lla_est_empresa` (`id_empresa`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Lla: catálogos tipo desgaste, tipo llantas, tipo rin (idea de negocio legacy 100%)
+CREATE TABLE IF NOT EXISTS `lla_cat_tipo_desgaste` (
+  `id` INT(11) NOT NULL,
+  `rango_inicial` INT(11) NOT NULL,
+  `rango_final` INT(11) NOT NULL,
+  `url_llanta` VARCHAR(500) NOT NULL,
+  `estado` INT(11) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Rangos de desgaste para visualización de llantas (origen: tipoDesgaste)';
+
+CREATE TABLE IF NOT EXISTS `lla_cat_tipo_llantas` (
+  `id_tipo_llantas` INT(20) NOT NULL,
+  `nombre_tipo_llantas` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  PRIMARY KEY (`id_tipo_llantas`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tipos de llantas (origen: tipoLlantas)';
+
+CREATE TABLE IF NOT EXISTS `lla_cat_tipo_rin` (
+  `id_tipo_rin` INT(20) NOT NULL,
+  `nombre_tipo_rin` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  PRIMARY KEY (`id_tipo_rin`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Tipos de rin (origen: tipoRin)';
+
+-- Lla: referencias llanta (especificaciones banda/rin; origen: manReferenciasLlanta)
+CREATE TABLE IF NOT EXISTS `lla_referencias_llanta` (
+  `id_referencia` INT(10) UNSIGNED NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `codigo_referencia` VARCHAR(30) NOT NULL,
+  `ancho_banda_mm` DECIMAL(6,2) NOT NULL COMMENT 'Anchura banda de rodadura mm',
+  `altura_perfil` DECIMAL(5,2) NOT NULL COMMENT 'Relación altura/ancho %',
+  `tipo_construccion` ENUM('R','B','D') NOT NULL DEFAULT 'R' COMMENT 'R: radial, B: belted bias, D: diagonal',
+  `diametro_rin_pulg` DECIMAL(5,2) NOT NULL COMMENT 'Diámetro interior rin pulgadas',
+  `descripcion` VARCHAR(120) DEFAULT NULL,
+  `estado` ENUM('ACTIVO','INACTIVO') NOT NULL DEFAULT 'ACTIVO',
+  `usuario_control` VARCHAR(50) DEFAULT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_referencia`),
+  KEY `idx_lla_ref_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Lla: histórico de procedimientos por llanta (origen: historicoProcedimientosLlanta)
+CREATE TABLE IF NOT EXISTS `lla_historico_procedimientos_llanta` (
+  `id_his_proc_llanta` BIGINT(15) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `placa` VARCHAR(10) NOT NULL,
+  `id_producto` INT(11) NOT NULL,
+  `serial_llanta` VARCHAR(36) NOT NULL,
+  `posicion` INT(11) NOT NULL,
+  `id_procedimiento` INT(11) NOT NULL,
+  `tipo_procedimiento` VARCHAR(36) NOT NULL,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_his_proc_llanta`),
+  KEY `idx_lla_hist_empresa` (`id_empresa`),
+  KEY `idx_lla_hist_placa_serial` (`placa`, `serial_llanta`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Historial de procedimientos aplicados a cada llanta';
+
+-- Lla: registro kilometraje por llanta (origen: registroKilometrajeLlantas; sin trigger, km_tramo en app o nullable)
+CREATE TABLE IF NOT EXISTS `lla_registro_kilometraje_llantas` (
+  `id_registro` BIGINT(20) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `id_producto` INT(11) NOT NULL,
+  `serial_llanta` VARCHAR(100) NOT NULL,
+  `placa_remolque` VARCHAR(10) DEFAULT NULL,
+  `placa_cabezote` VARCHAR(10) NOT NULL,
+  `km_inicial` BIGINT(20) NOT NULL,
+  `km_final` BIGINT(20) DEFAULT NULL,
+  `km_tramo` BIGINT(20) DEFAULT NULL COMMENT 'Calculado: km_final - km_inicial cuando se cierra tramo',
+  `fecha_inicio` DATETIME NOT NULL,
+  `fecha_fin` DATETIME DEFAULT NULL,
+  `activo` TINYINT(1) DEFAULT 1,
+  `usuario_control` VARCHAR(50) DEFAULT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_registro`),
+  KEY `idx_lla_km_empresa` (`id_empresa`),
+  KEY `idx_lla_km_serial` (`serial_llanta`, `id_producto`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Registro de kilometraje por tramo por llanta';
+
+-- Lla: reencauchadoras (catálogo; origen: reencauchadoras)
+CREATE TABLE IF NOT EXISTS `lla_reencauchadoras` (
+  `id_reencauchadora` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `nombre_reencauchadora` VARCHAR(200) NOT NULL,
+  `estado` ENUM('ACTIVO','INACTIVO') NOT NULL DEFAULT 'ACTIVO',
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_reencauchadora`, `id_empresa`),
+  KEY `idx_lla_reenc_empresa` (`id_empresa`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Reencauchadoras (origen: reencauchadoras)';
+
+-- Lla: trazabilidad reencauches (origen: trazabilidadReencauches)
+CREATE TABLE IF NOT EXISTS `lla_trazabilidad_reencauches` (
+  `id_trazabilidad` INT(11) NOT NULL,
+  `id_empresa` INT(11) NOT NULL,
+  `serial_original` VARCHAR(100) NOT NULL,
+  `serial_actual` VARCHAR(100) NOT NULL,
+  `id_producto` INT(11) NOT NULL,
+  `ciclo_reencauche` ENUM('R1','R2','R3') DEFAULT NULL,
+  `id_bodega_origen` INT(11) DEFAULT NULL,
+  `id_bodega_destino` INT(11) NOT NULL,
+  `id_reencauchadora` INT(11) DEFAULT NULL,
+  `fecha_movimiento` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `estado_movimiento` ENUM('EN_PROSPECTO','EN_REENCAUCHADORA','REENCAUCHADA','RECHAZADA','EN_OPERACION') NOT NULL,
+  `observaciones` TEXT,
+  `usuario_control` VARCHAR(50) NOT NULL,
+  `fecha_control` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_trazabilidad`),
+  KEY `idx_lla_traz_empresa` (`id_empresa`),
+  KEY `idx_lla_traz_serial` (`serial_actual`, `serial_original`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Trazabilidad de reencauches por llanta';
 
 -- Fes: formatos especiales
 CREATE TABLE IF NOT EXISTS `fes_formato_especiales_cat` (

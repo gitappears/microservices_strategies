@@ -48,7 +48,15 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 
 ## Acceso a RDS vía bastión
 
-RDS está en subnets privadas (`PubliclyAccessible: false`). Para conectar desde tu PC:
+RDS está en subnets privadas (`PubliclyAccessible: false`). Para conectar desde tu PC tienes dos opciones:
+
+### Opción A – Túnel para APIs locales (qinspecting_api_nest, etc.)
+
+Si quieres que una API que corre en tu PC se conecte a RDS, abre un **túnel SSH con redirección de puerto** y configura la API para usar `127.0.0.1:3306`. Los pasos detallados están en **[BASTION.md – Túnel SSH para APIs locales](BASTION.md#túnel-ssh-para-apis-locales-qinspecting_api_nest-etc)**.
+
+Resumen: en una terminal ejecutar `ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134` y en el `.env` de la API usar `DATABASE_HOST=127.0.0.1`, `DATABASE_PORT=3306`, `DATABASE_SSL=false` y las credenciales del RDS.
+
+### Opción B – SSH al bastión y MySQL desde ahí
 
 1. **Conectarte por SSH al bastión** (usa la clave `arquitectura_aws/qinspecting-bastion.pem`):
 

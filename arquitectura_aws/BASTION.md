@@ -25,6 +25,50 @@ sudo yum install -y mysql
 mysql -h qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com -u qinspect_admin -p
 ```
 
+## Túnel SSH para APIs locales (qinspecting_api_nest, etc.)
+
+Para que una API que corre en tu PC (por ejemplo `qinspecting_api_nest`) se conecte a RDS, RDS no es accesible directamente desde internet. Hay que abrir un **túnel SSH con redirección de puerto** (-L) desde tu máquina al bastión y de ahí al RDS.
+
+### 1. Abrir el túnel (dejar esta terminal abierta)
+
+Desde la raíz del repo `bases_qinspecting`:
+
+```bash
+ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134
+```
+
+Con eso, **localhost:3306** en tu PC redirige al puerto 3306 del RDS. No hace falta ejecutar nada dentro del bastión; la sesión puede quedar abierta.
+
+### 2. Configurar la API para usar el túnel
+
+En el `.env` del proyecto de la API (ej. `qinspecting_api_nest`):
+
+- **Host:** `127.0.0.1` (o `localhost`)
+- **Puerto:** `3306`
+- **Usuario y contraseña:** los del RDS (`qinspect_admin` y la contraseña del stack)
+- **SSL:** desactivado al usar túnel (`DATABASE_SSL=false`)
+
+Ejemplo mínimo:
+
+```env
+DATABASE_HOST=127.0.0.1
+DATABASE_PORT=3306
+DATABASE_USER=qinspect_admin
+DATABASE_PASSWORD=tu_password_rds
+DATABASE_NAME=bd_tenancy_planes
+DATABASE_SSL=false
+```
+
+Si la API usa varias bases (tenancy, personal, mantenimientos, etc.), define cada una con `DATABASE_NAME_TENANCY`, `DATABASE_NAME_PERSONAL`, etc., según el proyecto.
+
+### Resumen
+
+| Paso | Acción |
+|------|--------|
+| 1 | Abrir túnel: `ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod....rds.amazonaws.com:3306 ec2-user@3.236.168.134` |
+| 2 | En `.env` de la API: `DATABASE_HOST=127.0.0.1`, `DATABASE_PORT=3306`, usuario/contraseña RDS, `DATABASE_SSL=false` |
+| 3 | Arrancar la API en otra terminal; se conectará a RDS a través del túnel |
+
 ## Crear las 7 bases desde el bastión
 
 Opción A – Ejecutar SQL a mano (después de conectar con `mysql`):

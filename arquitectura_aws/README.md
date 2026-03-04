@@ -50,38 +50,105 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 
 ## Acceso a RDS vía bastión
 
-RDS está en subnets privadas (`PubliclyAccessible: false`). Para conectar desde tu PC tienes dos opciones:
+RDS está en subnets privadas (`PubliclyAccessible: false`). Para conectar desde tu PC se usa un **bastión EC2** (SSH o túnel). Documentación detallada: **[BASTION.md](BASTION.md)**.
+
+### Reducir costos: apagar el bastión cuando no se use
+
+El bastión es una instancia EC2 que cobra por horas. **Se recomienda detenerlo cuando no vayas a usarlo** y encenderlo solo cuando necesites acceso a RDS (túnel, MySQL, etc.). Al detenerlo dejas de pagar por vCPU/memoria; solo se cobra el disco EBS.
+
+---
+
+### Paso a paso: encender el bastión y conectarte
+
+Si el bastión estaba apagado o no conectas, sigue estos pasos en orden.
+
+#### 1. Comprobar estado del bastión y obtener su IP actual
+
+Al **encender** una instancia EC2, la IP pública puede **cambiar**. Siempre verifica estado e IP antes de conectarte:
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=qinspecting-bastion" \
+  --query "Reservations[].Instances[].[State.Name,PublicIpAddress,InstanceId]" \
+  --output table
+```
+
+Salida esperada (ejemplo):
+
+- `running` + una IP (ej. `3.236.168.134`) + `i-xxxxx` → anota la **PublicIpAddress** para el paso 3.
+- `stopped` → hay que encender la instancia (paso 2).
+
+#### 2. Si está apagado: encender el bastión
+
+```bash
+# Sustituir <INSTANCE_ID> por el ID que salió en el paso 1 (ej. i-0abc123def456)
+aws ec2 start-instances --instance-ids <INSTANCE_ID>
+```
+
+Espera 1–2 minutos. Vuelve a ejecutar el comando del **paso 1** para obtener la **nueva IP pública** (suele ser distinta a la anterior).
+
+#### 3. Comprobar si tu IP está permitida en el Security Group
+
+El bastión solo acepta SSH desde **tu IP actual**. Si cambiaste de red (otro WiFi, 4G, otra ubicación), tu IP cambió y hay que actualizarla en el Security Group.
+
+**Ver tu IP pública actual:**
+
+```bash
+curl -s ifconfig.me
+```
+
+**Añadir tu IP al Security Group del bastión** (SG: `sg-0bca7597802398cbc`):
+
+```bash
+MY_IP=$(curl -s ifconfig.me)
+aws ec2 authorize-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr ${MY_IP}/32
+```
+
+Si ya había una regla para otra IP y quieres dejar solo la actual, puedes revocar la antigua (opcional):
+
+```bash
+aws ec2 revoke-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr IP_VIEJA/32
+```
+
+#### 4. Conectarte: túnel SSH o SSH directo
+
+Usa la **IP del bastión** que obtuviste en el paso 1 (y, si lo encendiste, la nueva IP del paso 2).
+
+**Desde la raíz del repo `bases_qinspecting`:**
+
+- **Túnel** (para que tu API local use RDS vía `127.0.0.1:3306`):
+
+  ```bash
+  ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@<IP_BASTION>
+  ```
+
+- **SSH directo** (para usar MySQL desde el bastión):
+
+  ```bash
+  ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@<IP_BASTION>
+  ```
+
+Sustituye `<IP_BASTION>` por la IP que devolvió el `describe-instances` (ej. `3.236.168.134`). Si la IP cambió al encender el bastión, **usa siempre la IP actual**, no una IP antigua guardada en documentación.
+
+---
 
 ### Opción A – Túnel para APIs locales (qinspecting_api_nest, etc.)
 
-Si quieres que una API que corre en tu PC se conecte a RDS, abre un **túnel SSH con redirección de puerto** y configura la API para usar `127.0.0.1:3306`. Los pasos detallados están en **[BASTION.md – Túnel SSH para APIs locales](BASTION.md#túnel-ssh-para-apis-locales-qinspecting_api_nest-etc)**.
+Si quieres que una API que corre en tu PC se conecte a RDS, abre el **túnel SSH** (comando anterior con `-L 3306:...`) y configura la API para usar `127.0.0.1:3306`. Detalle en **[BASTION.md – Túnel SSH para APIs locales](BASTION.md#túnel-ssh-para-apis-locales-qinspecting_api_nest-etc)**.
 
-Resumen: en una terminal ejecutar `ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134` y en el `.env` de la API usar `DATABASE_HOST=127.0.0.1`, `DATABASE_PORT=3306`, `DATABASE_SSL=false` y las credenciales del RDS.
+En el `.env` de la API: `DATABASE_HOST=127.0.0.1`, `DATABASE_PORT=3306`, `DATABASE_SSL=false` y credenciales del RDS.
 
 ### Opción B – SSH al bastión y MySQL desde ahí
 
-1. **Conectarte por SSH al bastión** (usa la clave `arquitectura_aws/qinspecting-bastion.pem`):
+1. Conéctate por SSH (comando del paso 4).
+2. En el bastión, instalar MySQL client (solo la primera vez): `sudo yum install -y mysql`
+3. Conectar a RDS: `mysql -h qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com -u qinspect_admin -p`
 
-   ```bash
-   ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@<BASTION_IP>
-   ```
+O copiar los scripts al bastión (scp) y ejecutar `crear_bases_y_schema.sh` desde ahí. Ver [BASTION.md](BASTION.md) para más comandos.
 
-2. **En el bastión, instalar el cliente MySQL** (solo la primera vez):
+---
 
-   ```bash
-   sudo yum install -y mysql
-   ```
-
-3. **Desde el bastión, conectar a RDS y crear las bases**:
-
-   ```bash
-   mysql -h qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com -u qinspect_admin -p
-   # Pegar los CREATE DATABASE (o ejecutar crear_bases_y_schema.sh si subes el repo al bastión)
-   ```
-
-   O copiar los scripts al bastión (scp) y ejecutar `crear_bases_y_schema.sh` desde ahí con el endpoint de RDS.
-
-**Bastión actual:** IP pública `3.236.168.134`, SG `sg-0bca7597802398cbc`. SSH permitido solo desde tu IP; el SG de RDS permite 3306 desde el SG del bastión. La plantilla [bastion.yaml](bastion.yaml) sirve para recrear el bastión en otra cuenta/región (si el deploy falla por validación, crear el bastión con la CLI como en la sección anterior).
+**Resumen:** Bastión SG `sg-0bca7597802398cbc`. SSH (22) solo desde IPs que hayas añadido al SG. RDS (3306) solo desde el SG del bastión. Para recrear el bastión en otra cuenta/región: [bastion.yaml](bastion.yaml).
 
 ## Prerrequisitos
 

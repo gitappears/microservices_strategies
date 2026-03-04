@@ -4,7 +4,9 @@ Bastión EC2 para conectarte a RDS (en subnets privadas) por SSH y desde ahí ej
 
 ## Reducir costos: apagar el bastión cuando no se use
 
-El bastión es una instancia EC2 que cobra por horas de uso. Cuando no necesites SSH ni túnel a RDS, **apágala** para dejar de pagar por vCPU/memoria (solo seguirás pagando el disco EBS, mucho menor):
+El bastión es una instancia EC2 que cobra por horas de uso. **Se recomienda apagarlo cuando no lo vayas a usar** y encenderlo solo cuando necesites acceso a RDS. Así dejas de pagar por vCPU/memoria (solo se cobra el disco EBS, mucho menor).
+
+**Apagar el bastión:**
 
 ```bash
 # Obtener el InstanceId (consola EC2 o):
@@ -12,18 +14,23 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" 
 
 # Apagar
 aws ec2 stop-instances --instance-ids <INSTANCE_ID>
-
-# Encender cuando vuelvas a necesitar acceso
-aws ec2 start-instances --instance-ids <INSTANCE_ID>
 ```
 
-Tras encender de nuevo, la IP pública puede haber cambiado; comprueba la nueva IP en la consola EC2 o con `aws ec2 describe-instances --instance-ids <INSTANCE_ID> --query "Reservations[].Instances[].PublicIpAddress"` y actualiza el comando SSH/túnel si hace falta.
+**Cuando vuelvas a necesitar acceso:** encender el bastión, comprobar si la IP cambió y, si tu IP pública cambió, actualizar el Security Group. El **paso a paso completo** (encender → comprobar estado e IP → configurar tu IP en el SG → conectar) está en el [README – Acceso a RDS vía bastión](README.md#acceso-a-rds-vía-bastión).
+
+Resumen rápido para encender:
+
+```bash
+aws ec2 start-instances --instance-ids <INSTANCE_ID>
+# Esperar 1–2 min, luego obtener la nueva IP:
+aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" --query "Reservations[].Instances[].[State.Name,PublicIpAddress]" --output table
+```
 
 ## Datos actuales
 
 | Dato | Valor |
 |------|--------|
-| **IP pública** | `3.236.168.134` |
+| **IP pública** | `3.236.168.134` (puede cambiar si el bastión se apagó y se volvió a encender; ver [Troubleshooting](#troubleshooting-connection-timed-out-al-hacer-ssh)) |
 | **Usuario SSH** | `ec2-user` |
 | **Clave privada** | `arquitectura_aws/qinspecting-bastion.pem` |
 | **Security Group bastión** | `sg-0bca7597802398cbc` |
@@ -172,9 +179,59 @@ Los `00_schema.sql` usan **CREATE TABLE IF NOT EXISTS**: se crean tablas nuevas 
 - escribir y ejecutar **ALTER TABLE** a mano en esa base, o  
 - **borrar esa base**, crearla de nuevo y volver a ejecutar su `00_schema.sql` (solo si puedes perder los datos de esa base).
 
+## Troubleshooting: "Connection timed out" al hacer SSH
+
+Si `ssh ... ec2-user@3.236.168.134` devuelve **Connection timed out**, suele ser por:
+
+1. **Bastión apagado** → la IP pública se pierde o cambia al encender de nuevo.
+2. **Tu IP pública cambió** → el Security Group solo permite SSH desde una IP concreta (`191.107.171.174/32`). Si cambiaste de red (Wi‑Fi, 4G, otra casa), tu IP ya no coincide.
+
+### 1. Comprobar estado del bastión y su IP actual
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=qinspecting-bastion" \
+  --query "Reservations[].Instances[].[State.Name,PublicIpAddress,InstanceId]" \
+  --output table
+```
+
+- Si **State** es `stopped`: enciende la instancia con `aws ec2 start-instances --instance-ids <INSTANCE_ID>` y espera 1–2 minutos. Vuelve a ejecutar la query para obtener la **nueva** `PublicIpAddress` y usa esa IP en el comando `ssh`.
+- Si **State** es `running` y **PublicIpAddress** es distinta de `3.236.168.134`, usa la IP que salga en el comando SSH.
+
+### 2. Ver tu IP pública actual
+
+```bash
+curl -s ifconfig.me
+```
+
+Compara con la IP permitida en el SG (`191.107.171.174`). Si es distinta, hay que actualizar la regla.
+
+### 3. Actualizar el Security Group con tu IP actual
+
+Permitir SSH solo desde tu IP actual (reemplaza `TU_IP_ACTUAL` por la que devolvió `curl -s ifconfig.me`):
+
+```bash
+# Quitar la regla antigua (opcional, si quieres dejar solo una IP)
+aws ec2 revoke-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr 191.107.171.174/32
+
+# Añadir tu IP actual
+aws ec2 authorize-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr TU_IP_ACTUAL/32
+```
+
+O en un solo paso (añade la nueva IP sin borrar la anterior, por si usas varias redes):
+
+```bash
+MY_IP=$(curl -s ifconfig.me)
+aws ec2 authorize-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr ${MY_IP}/32
+```
+
+Después de esto, prueba de nuevo el SSH (con la IP del bastión que obtuviste en el paso 1).
+
+---
+
 ## Seguridad
 
-- SSH (22) está permitido **solo desde tu IP** (`191.107.171.174/32`). Si tu IP cambia, actualiza la regla en el SG `sg-0bca7597802398cbc`.
+- SSH (22) está permitido **solo desde tu IP** (p. ej. `191.107.171.174/32`). Si tu IP cambia (otra red, otro lugar), actualiza la regla en el SG `sg-0bca7597802398cbc` (ver [Troubleshooting](#troubleshooting-connection-timed-out-al-hacer-ssh)).
 - RDS (3306) acepta tráfico **solo desde el SG del bastión**, no desde internet.
 - El archivo `.pem` está en `.gitignore`; no lo subas al repositorio.
 

@@ -2,6 +2,23 @@
 
 Bastión EC2 para conectarte a RDS (en subnets privadas) por SSH y desde ahí ejecutar MySQL.
 
+## Reducir costos: apagar el bastión cuando no se use
+
+El bastión es una instancia EC2 que cobra por horas de uso. Cuando no necesites SSH ni túnel a RDS, **apágala** para dejar de pagar por vCPU/memoria (solo seguirás pagando el disco EBS, mucho menor):
+
+```bash
+# Obtener el InstanceId (consola EC2 o):
+aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" --query "Reservations[].Instances[].InstanceId" --output text
+
+# Apagar
+aws ec2 stop-instances --instance-ids <INSTANCE_ID>
+
+# Encender cuando vuelvas a necesitar acceso
+aws ec2 start-instances --instance-ids <INSTANCE_ID>
+```
+
+Tras encender de nuevo, la IP pública puede haber cambiado; comprueba la nueva IP en la consola EC2 o con `aws ec2 describe-instances --instance-ids <INSTANCE_ID> --query "Reservations[].Instances[].PublicIpAddress"` y actualiza el comando SSH/túnel si hace falta.
+
 ## Datos actuales
 
 | Dato | Valor |

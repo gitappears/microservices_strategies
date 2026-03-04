@@ -1,0 +1,14 @@
+# Configuración para próximos despliegues: sam deploy (sin --guided)
+# Ajusta parameter_overrides si cambias el secret o el entorno.
+
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "qinspecting-api"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "SecretArn=arn:aws:secretsmanager:us-east-1:432513807359:secret:qinspecting/api/jwt-and-db-LDzgY5"
+resolve_s3 = true
+confirm_changeset = true
+disable_rollback = false
+# Para desplegar sin preguntar: confirm_changeset = false

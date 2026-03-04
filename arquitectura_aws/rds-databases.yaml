@@ -1,5 +1,8 @@
-# CloudFormation: RDS MySQL 8 para QInspecting (7 bases por sistema)
+# CloudFormation: RDS MySQL para QInspecting (7 bases por sistema)
 # Ref: PLAN_TRABAJO_MICROSERVICIOS_QINSPECTING.md §11.7, arquitectura_aws/README.md
+#
+# IMPORTANTE: MySQL 8.0 llega al fin de soporte estándar en RDS el 31-jul-2026.
+# Esta plantilla usa por defecto MySQL 8.4 LTS. Ver RDS_UPGRADE_MYSQL_2026.md.
 #
 # Tras el deploy, crear las bases con:
 #   refactor_ddl/crear_bases_y_schema.sh <RDS_ENDPOINT> <MasterUsername> <MasterPassword>
@@ -11,7 +14,7 @@
 
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  QInspecting - Instancia RDS MySQL 8 para las 7 bases por sistema
+  QInspecting - Instancia RDS MySQL (8.4 LTS por defecto) para las 7 bases por sistema
   (bd_tenancy_planes, bd_personal, bd_inspecciones, bd_mantenimientos,
    bd_inventario, bd_capacitaciones, bd_flota_documentos).
   Tras el deploy, ejecutar refactor_ddl/crear_bases_y_schema.sh con el endpoint.
@@ -28,14 +31,20 @@ Parameters:
     Description: Security Group que permite acceso a RDS (ej. desde ECS/Lambda). Debe permitir ingress 3306 desde los consumidores.
   DBInstanceClass:
     Type: String
-    Default: db.t3.micro
+    Default: db.t4g.micro
     AllowedValues:
       - db.t3.micro
       - db.t3.small
       - db.t3.medium
       - db.t4g.micro
       - db.t4g.small
-    Description: Clase de instancia RDS
+    Description: Clase de instancia RDS (t4g suele ser más económica que t3; usar t3 si la región no tiene t4g)
+  BackupRetentionPeriod:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 35
+    Description: Días de retención de backup (0 = sin backup automático; 1 recomendado para bajo uso; 7 para prod)
   AllocatedStorage:
     Type: Number
     Default: 20
@@ -54,6 +63,10 @@ Parameters:
     Type: String
     Default: prod
     Description: Nombre del entorno (prod, staging, etc.)
+  EngineVersion:
+    Type: String
+    Default: "8.4"
+    Description: Versión de MySQL (8.4 LTS recomendada; 8.0 llega a fin de soporte estándar 31-jul-2026)
 
 Resources:
   DBSubnetGroup:
@@ -69,7 +82,7 @@ Resources:
     Properties:
       DBInstanceIdentifier: !Sub 'qinspecting-${EnvironmentName}'
       Engine: mysql
-      EngineVersion: "8.0"
+      EngineVersion: !Ref EngineVersion
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref AllocatedStorage
       MasterUsername: !Ref MasterUsername
@@ -79,7 +92,7 @@ Resources:
         - !Ref DBSecurityGroupId
       MultiAZ: false
       StorageEncrypted: true
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: !Ref BackupRetentionPeriod
       PreferredBackupWindow: "03:00-04:00"
       # CharacterSetName no soportado en MySQL 8.0 al crear; por defecto es utf8mb4. Definir charset por base con crear_bases_y_schema.sh / rds-databases-config.yml
       PubliclyAccessible: false

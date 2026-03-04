@@ -1,3 +1,6 @@
 # Claves privadas (bastión, etc.)
 *.pem
 arquitectura_aws/*.pem
+
+# SAM build
+.aws-sam

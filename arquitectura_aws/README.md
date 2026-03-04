@@ -13,6 +13,8 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 | [scripts/](scripts/) | Scripts que usan el YAML: `create-databases-from-config.py` crea las bases leyendo `rds-databases-config.yml`. |
 | [bastion.yaml](bastion.yaml) | Plantilla opcional para bastión EC2 (acceso SSH y desde ahí a RDS). Si el deploy falla por hooks, ver [Acceso a RDS vía bastión](#acceso-a-rds-via-bastion). |
 | [api-gateway-rutas.md](api-gateway-rutas.md) | Rutas sugeridas y configuración de API Gateway (rutas, excepciones para `/auth`). |
+| [OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md) | Cómo reducir costos al máximo (RDS, bastión, backups, Lambda, etc.). |
+| [RDS_UPGRADE_MYSQL_2026.md](RDS_UPGRADE_MYSQL_2026.md) | Fin de soporte MySQL 8.0 (31-jul-2026): actualizar a 8.4 LTS y pasos para instancias existentes. |
 
 ## Crear RDS y las bases de datos
 
@@ -92,11 +94,18 @@ Resumen: en una terminal ejecutar `ssh -i arquitectura_aws/qinspecting-bastion.p
 
 ```bash
 cd arquitectura_aws
-sam build
-sam deploy --guided
+sam build --template template-sam.yaml
+sam deploy
 ```
 
-En `--guided` indicar: stack name, región, parámetros (nombre del secret, ARN de RDS si se usa). La plantilla despliega solo API Gateway + Lambda Authorizer; el ALB y los servicios ECS se despliegan por separado (ECS CLI, Terraform, o consola).
+Si es la primera vez o no tienes `samconfig.toml`, usa `sam deploy --guided` y indica: stack name, región, y **SecretArn** (ARN del secret en Secrets Manager con `JWT_SECRET` y opcionalmente `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`).
+
+**Despliegue ya realizado (referencia):**
+- **API (HTTP):** `https://tmm12v9odf.execute-api.us-east-1.amazonaws.com/prod`
+- **Stack:** `qinspecting-api` (us-east-1)
+- **Secret usado:** `qinspecting/api/jwt-and-db` — **importante:** en producción actualiza el valor de `JWT_SECRET` en ese secret (por ejemplo con `aws secretsmanager put-secret-value`).
+
+La plantilla despliega solo API Gateway + Lambda Authorizer; el ALB y los servicios ECS se despliegan por separado (ECS CLI, Terraform, o consola).
 
 ## Flujo
 

@@ -52,6 +52,14 @@ Resources:
         - !Ref BastionSecurityGroup
       KeyName: !Ref KeyName
       AssociatePublicIpAddress: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          # Habilitar reenvío TCP para túneles SSH (-L) hacia RDS
+          sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
+          grep -q '^AllowTcpForwarding' /etc/ssh/sshd_config || echo 'AllowTcpForwarding yes' >> /etc/ssh/sshd_config
+          systemctl restart sshd
       Tags:
         - Key: Name
           Value: qinspecting-bastion

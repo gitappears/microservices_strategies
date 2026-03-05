@@ -99,7 +99,25 @@ CREATE TABLE IF NOT EXISTS `per_personal` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Personal consolidado de todas las empresas. Origen: personal (cada qinspect_new*)';
 
+-- -----------------------------------------------------------------------------
+-- Usuarios de sistema (login). numeroDocumento debe existir en per_personal.
+-- (per_personal tiene PK compuesta (numero_documento, id_empresa), no se define FK aquí.)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `usrUsuarios` (
+  `numeroDocumento` VARCHAR(50) NOT NULL,
+  `password` VARCHAR(500) NOT NULL,
+  `estadoUsuario` SMALLINT(1) NOT NULL DEFAULT 1 COMMENT '1=activo, 0=retirado',
+  `fkIdRol` INT(20) NOT NULL,
+  `fechaControl` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `usuarioControl` VARCHAR(50) NOT NULL,
+  PRIMARY KEY (`numeroDocumento`),
+  KEY `idx_usr_usuarios_estado` (`estadoUsuario`),
+  KEY `idx_usr_usuarios_rol` (`fkIdRol`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Usuarios de acceso al sistema; numeroDocumento debe existir en per_personal';
+
 -- Nota: No hay FK a ten_empresas porque esta BD puede estar en otro servidor.
 -- La aplicación garantiza que id_empresa exista en bd_tenancy_planes.
+-- fkIdRol referencia bd_tenancy.rol (otra BD); no se define FK cross-database.
 
 SET FOREIGN_KEY_CHECKS = 1;

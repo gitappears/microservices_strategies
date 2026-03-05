@@ -227,6 +227,27 @@ aws ec2 authorize-security-group-ingress --group-id sg-0bca7597802398cbc --proto
 
 Después de esto, prueba de nuevo el SSH (con la IP del bastión que obtuviste en el paso 1).
 
+## Troubleshooting: "channel X: open failed: administratively prohibited"
+
+Si al usar el **túnel** (`ssh -i ... -L 3306:... ec2-user@...`) ves **"channel 3: open failed: administratively prohibited"**, el servidor SSH del bastión tiene deshabilitado el reenvío TCP (port forwarding). Hay que habilitarlo **una vez en el bastión actual**:
+
+1. Conéctate al bastión **sin** túnel (solo SSH normal):
+   ```bash
+   ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@3.236.168.134
+   ```
+2. En el bastión, edita la configuración de SSH y habilita el reenvío:
+   ```bash
+   sudo sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
+   grep -q '^AllowTcpForwarding' /etc/ssh/sshd_config || echo 'AllowTcpForwarding yes' | sudo tee -a /etc/ssh/sshd_config
+   sudo systemctl restart sshd
+   ```
+3. Sal del bastión (`exit`) y vuelve a abrir el túnel desde tu PC:
+   ```bash
+   ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134
+   ```
+
+En futuros despliegues con la plantilla `bastion.yaml` (CloudFormation), el UserData ya habilita `AllowTcpForwarding yes` al arrancar la instancia, así que no tendrás que hacer este paso manual.
+
 ---
 
 ## Seguridad

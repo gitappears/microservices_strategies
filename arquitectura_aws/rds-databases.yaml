@@ -11,6 +11,11 @@
 # Despliegue:
 #   aws cloudformation deploy --template-file rds-databases.yaml --stack-name qinspecting-rds \
 #     --parameter-overrides VpcId=vpc-xxx PrivateSubnetIds=subnet-1,subnet-2 MasterUserPassword=xxx
+#
+# Parámetros de coste / tamaño (defaults si no pasas overrides):
+#   DBInstanceClass         → db.t4g.micro
+#   BackupRetentionPeriod   → 1 (día). Usa 0 en dev si aceptas no tener backups automáticos; 7+ en prod.
+#   AllocatedStorage        → 20 (GB)
 
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
@@ -119,3 +124,13 @@ Outputs:
   DatabasesToCreate:
     Description: Bases a crear tras el deploy (usar con refactor_ddl/crear_bases_y_schema.sh)
     Value: bd_tenancy_planes,bd_personal,bd_inspecciones,bd_mantenimientos,bd_inventario,bd_capacitaciones,bd_flota_documentos
+  DeployedDBInstanceClass:
+    Description: Clase de instancia RDS (eco del parámetro DBInstanceClass; revisar coste en consola RDS)
+    Value: !Ref DBInstanceClass
+    Export:
+      Name: !Sub '${AWS::StackName}-DBInstanceClass'
+  DeployedBackupRetentionDays:
+    Description: Días de retención de backup (eco del parámetro BackupRetentionPeriod; 0 = sin backup automático)
+    Value: !Ref BackupRetentionPeriod
+    Export:
+      Name: !Sub '${AWS::StackName}-BackupRetentionDays'

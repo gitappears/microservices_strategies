@@ -271,6 +271,6 @@ aws ec2 authorize-security-group-ingress --group-id sg-XXXXX --protocol tcp --po
 aws ec2 authorize-security-group-ingress --group-id sg-0b80ffe46c23fef46 --protocol tcp --port 3306 --source-group sg-XXXXX
 
 # Lanzar instancia (sustituir sg-XXXXX y subnet por tus valores)
-aws ec2 run-instances --image-id ami-0199fa5fada510433 --instance-type t3.micro --key-name qinspecting-bastion \
+aws ec2 run-instances --image-id ami-0199fa5fada510433 --instance-type t3.nano --key-name qinspecting-bastion \
   --subnet-id subnet-0b22e33560b7e6b8a --security-group-ids sg-XXXXX --associate-public-ip-address
 ```

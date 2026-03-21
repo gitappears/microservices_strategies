@@ -3,7 +3,7 @@
 #
 # Despliegue:
 #   aws cloudformation deploy --template-file bastion.yaml --stack-name qinspecting-bastion \
-#     --parameter-overrides VpcId=vpc-xxx PublicSubnetId=subnet-xxx KeyName=qinspecting-bastion BastionAllowedCidr=TU_IP/32
+#     --parameter-overrides VpcId=vpc-xxx PublicSubnetId=subnet-xxx KeyName=qinspecting-bastion BastionAllowedCidr=TU_IP/32 InstanceType=t3.nano
 
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Bastion EC2 para QInspecting - acceso SSH y desde ahi a RDS
@@ -25,7 +25,16 @@ Parameters:
   AmiId:
     Type: String
     Default: "ami-0199fa5fada510433"
-    Description: "AMI Amazon Linux 2 (us-east-1); cambiar si usas otra region"
+    Description: "AMI Amazon Linux 2 x86_64 (us-east-1); cambiar si usas otra región. Para t4g.* necesitas AMI ARM64 y el mismo tipo de instancia."
+  InstanceType:
+    Type: String
+    Default: t3.nano
+    AllowedValues:
+      - t3.nano
+      - t3.micro
+    Description: >
+      t3.nano suele bastar para SSH y túnel a RDS (más barato que t3.micro).
+      Si actualizas el stack y ya tenías t3.micro, CloudFormation puede sustituir la instancia.
 
 Resources:
   BastionSecurityGroup:
@@ -46,7 +55,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmiId
-      InstanceType: t3.micro
+      InstanceType: !Ref InstanceType
       SubnetId: !Ref PublicSubnetId
       SecurityGroupIds:
         - !Ref BastionSecurityGroup

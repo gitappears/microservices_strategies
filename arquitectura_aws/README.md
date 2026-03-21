@@ -13,7 +13,7 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 | [scripts/](scripts/) | Scripts que usan el YAML: `create-databases-from-config.py` crea las bases leyendo `rds-databases-config.yml`. |
 | [bastion.yaml](bastion.yaml) | Plantilla opcional para bastión EC2 (acceso SSH y desde ahí a RDS). Si el deploy falla por hooks, ver [Acceso a RDS vía bastión](#acceso-a-rds-via-bastion). |
 | [api-gateway-rutas.md](api-gateway-rutas.md) | Rutas sugeridas y configuración de API Gateway (rutas, excepciones para `/auth`). |
-| [OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md) | Cómo reducir costos al máximo (RDS, bastión, backups, Lambda, etc.). |
+| [OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md) | Cómo reducir costos (RDS, bastión, VPC, ALB/ECS, Lambda). Incluye **mapeo factura ↔ plantillas** de esta carpeta. |
 | [RDS_UPGRADE_MYSQL_2026.md](RDS_UPGRADE_MYSQL_2026.md) | Fin de soporte MySQL 8.0 (31-jul-2026): actualizar a 8.4 LTS y pasos para instancias existentes. |
 
 ## Crear RDS y las bases de datos
@@ -55,6 +55,8 @@ RDS está en subnets privadas (`PubliclyAccessible: false`). Para conectar desde
 ### Reducir costos: apagar el bastión cuando no se use
 
 El bastión es una instancia EC2 que cobra por horas. **Se recomienda detenerlo cuando no vayas a usarlo** y encenderlo solo cuando necesites acceso a RDS (túnel, MySQL, etc.). Al detenerlo dejas de pagar por vCPU/memoria; solo se cobra el disco EBS.
+
+La plantilla [bastion.yaml](bastion.yaml) usa por defecto **`t3.nano`** (más barata que `t3.micro`) para nuevos despliegues. Guía detallada y cómo interpretar cargos de **VPC / RDS / EC2** en la factura: **[OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md)**.
 
 ---
 

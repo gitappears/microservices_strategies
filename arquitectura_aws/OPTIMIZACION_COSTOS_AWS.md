@@ -4,19 +4,40 @@ Este documento describe cómo **reducir al máximo** el costo de la arquitectura
 
 ---
 
+## 0. Mapeo: tu factura ↔ plantillas en `arquitectura_aws/`
+
+Las plantillas de esta carpeta **no crean la VPC ni el NAT Gateway**; solo **RDS** (`rds-databases.yaml`), **bastión** (`bastion.yaml`) y **API + Lambda Authorizer** (`template-sam.yaml`). Si en Cost Explorer ves líneas como las siguientes (ejemplo ~17 USD/mes, pre-producción):
+
+| Partida aprox. | Origen habitual | Qué tocar |
+|----------------|-----------------|------------|
+| **Relational Database Service** | Instancia MySQL 24/7 del stack `rds-databases.yaml` (`QInspectingDB`) | Clase mínima (`db.t4g.micro`), `BackupRetentionPeriod` 0 o 1, sin Multi-AZ (ya en plantilla). RDS **no se apaga** solo: sigue cobrando aunque no haya tráfico. |
+| **EC2 – Instancias** | Sobre todo **bastión** (`bastion.yaml`) si está **running** | **`Stop` cuando no uses SSH/túnel** (sigues pagando EBS). Opción: `InstanceType` **t3.nano** (default en plantilla) o bajar tamaño al actualizar el stack. |
+| **VPC** | **No** sale de `rds-databases.yaml` / `bastion.yaml` solos | Suele ser **NAT Gateway** (~32 USD/mes si está encendido), **Elastic IPs** asociados, **VPC endpoints** o **cargo por IPv4 público**. Revisa en Cost Explorer **por recurso** o **Cost allocation tags** qué stack (ECS, etc.) creó la VPC/NAT. |
+| **Elastic Load Balancing + ECS** | Stacks **fuera** de esta carpeta (ALB + Fargate) | **ALB:** coste **fijo por hora** mientras exista (~**USD 15–22/mes** solo ese cargo en muchas regiones; revisa [precios ELB](https://aws.amazon.com/elasticloadbalancing/pricing/)) **+ LCU** con tráfico. **Fargate:** cobra **vCPU y GB por segundo** de tarea encendida; una tarea mínima 24/7 suele ser **varios USD/mes** aparte del ALB. En pre-prod: bajar réplicas, tareas pequeñas, o **Lambda** sin ALB. |
+| **Secrets Manager** | Secret del Authorizer / credenciales | Unificar en **un secret** por entorno; no duplicar. |
+
+**Checklist rápido (pre-producción):**
+
+1. Bastión EC2 → `aws ec2 stop-instances --instance-ids <id>` (o consola) cuando no trabajes con RDS desde tu PC.  
+2. RDS → confirmar `DBInstanceClass` y `BackupRetentionPeriod` en el stack (parámetros de `rds-databases.yaml`).  
+3. Buscar **NAT Gateway** en la región: si hay uno “por si acaso” y las Lambdas salen a internet **sin** VPC, valorar eliminar NAT en entornos de dev (requiere rediseño de subnets/rutas).  
+4. Revisar **ALB + ECS** si el coste de ELB/ECS aparece: son candidatos a apagar hasta producción.
+
+---
+
 ## 1. De dónde viene el gasto (y qué duele cuando casi no se usa)
 
 Cuando el uso es bajo, la mayor parte del costo **no** viene del tráfico, sino de **recursos que están encendidos 24/7**:
 
 | Componente | Comportamiento | Costo aproximado (us-east-1, bajo uso) |
 |------------|----------------|----------------------------------------|
-| **RDS MySQL** | Siempre encendido (instancia reservada de tiempo) | **~USD 15–25/mes** (db.t3.micro, 20 GB) |
-| **Bastión EC2** | Siempre encendido si está desplegado | **~USD 8–10/mes** (t3.micro) |
+| **RDS MySQL** | Siempre encendido (instancia reservada de tiempo) | **~USD 12–25/mes** según clase (`db.t4g.micro` suele estar en el rango bajo) y almacenamiento |
+| **Bastión EC2** | Siempre encendido si está desplegado | **~USD 3–8/mes** (t3.nano) a **~USD 8–10/mes** (t3.micro), según horas encendido |
 | **API Gateway HTTP API** | Pago por millón de solicitudes | Muy bajo con poco tráfico |
 | **Lambda (Authorizer)** | Pago por invocación + tiempo | Muy bajo con poco tráfico |
 | **Secrets Manager** | Por secret/mes | ~USD 0,40/secret/mes |
-| **ALB** (si lo usas) | Por hora + LCU | **~USD 16–22/mes** aunque no haya tráfico |
-| **ECS Fargate** (si lo usas) | Por vCPU/hora y GB/hora | Depende de tareas y tiempo encendidas |
+| **ALB** (si lo usas) | **Cargo por hora** (ALB “provisionado”) **+ LCU** | **~USD 15–22/mes** típico **solo por tener el ALB encendido** (casi sin tráfico); los **LCU** suben el total cuando hay peticiones SSL, reglas, bytes procesados. **Precio exacto depende de la región** → [Calculadora AWS](https://calculator.aws/). |
+| **ECS Fargate** (si lo usas) | **vCPU-segundo + GB-segundo** por cada tarea | **No** es solo “por tráfico HTTP”: si **desired count ≥ 1**, pagas **24/7**. Ejemplo orientativo (orden de magnitud, us-east-1): una tarea **0,25 vCPU / 0,5 GB** continua puede rondar **unos pocos a ~10+ USD/mes** **por servicio** además del ALB; más vCPU/RAM o más réplicas = más. Usa la calculadora con tu región y tamaño de tarea. |
 
 **Conclusión:** Si ya les han cobrado una suma alta (ej. ~15 M COP) con poco uso, lo más probable es que la mayoría venga de **RDS + Bastión (+ quizá ALB/ECS si están desplegados)**. Optimizar significa: reducir o eliminar lo que está “siempre encendido” y usar alternativas más baratas donde sea posible.
 
@@ -52,7 +73,7 @@ Cuando el uso es bajo, la mayor parte del costo **no** viene del tráfico, sino 
     - Parar: `aws ec2 stop-instances --instance-ids <INSTANCE_ID>`  
     - Iniciar: `aws ec2 start-instances --instance-ids <INSTANCE_ID>`  
   - La IP pública puede cambiar al reiniciar; si usan túnel, actualizar el host en el comando `ssh -L` o en la documentación interna.
-- **Tamaño:** `t3.micro` ya es el tamaño mínimo razonable; no bajar más.
+- **Tamaño:** En `bastion.yaml` el default es **`t3.nano`** (suficiente para SSH/túnel); `t3.micro` solo si necesitas más RAM.
 - **Eliminar el bastión si no lo necesitan:** Si solo acceden a RDS desde una API desplegada en ECS/Lambda dentro de la VPC, pueden **no desplegar el bastión** y ahorrarse ese costo por completo. El bastión solo es necesario para acceso humano (SSH/túnel) a RDS.
 
 **Resumen bastión:** Apagar cuando no se use; o no desplegar el stack del bastión si no hay acceso humano a RDS.
@@ -63,11 +84,10 @@ Cuando el uso es bajo, la mayor parte del costo **no** viene del tráfico, sino 
 
 - **API Gateway HTTP API:** Cobran por millón de solicitudes; con poco tráfico el costo es despreciable. No hace falta cambiar nada por costo en esta fase.
 - **Lambda Authorizer:**  
-  - Timeout 10 s y 256 MB está bien.  
-  - Si el Authorizer **no** consulta RDS (solo valida JWT), se puede bajar memoria a **128 MB** para ahorrar unos céntimos en duración; el impacto es mínimo.  
-  - Evitar poner la Lambda en VPC si no necesita hablar con RDS; si la Lambda está en VPC y sí consulta RDS, el diseño actual es correcto pero añade algo de cold start.
+  - En `template-sam.yaml` ya está **`MemorySize: 128`** MB en `Globals` (adecuado para bajo coste).  
+  - Evitar poner la Lambda en **VPC** si no necesita RDS: en VPC los cold starts suelen ser mayores y puede implicar **NAT** u otros costes de red.
 
-**Resumen:** Dejar API Gateway y Lambda como están; solo bajar memoria del Authorizer a 128 MB si no usa RDS.
+**Resumen:** HTTP API + Lambda con poca memoria y sin VPC innecesaria = coste marginal frente a ALB/ECS.
 
 ---
 
@@ -79,11 +99,23 @@ Cuando el uso es bajo, la mayor parte del costo **no** viene del tráfico, sino 
 
 ### 2.5 ECS Fargate + ALB (cuando los usen)
 
-- **ALB:** Cobra por hora aunque no haya tráfico. Si despliegan ECS detrás de un ALB, ese costo es fijo cada mes.  
-  - Alternativa más barata para **poco tráfico:** exponer los servicios con **API Gateway HTTP API → integración HTTP directa** a la IP pública del servicio (menos ideal para producción) o usar un **Network Load Balancer** solo si les encaja el modelo; en muchos casos el ALB sigue siendo la opción estándar, pero conviene tener **una sola ALB** para todos los servicios y no una por entorno de bajo uso.
-- **Fargate:** Cobran por vCPU y memoria por tiempo de ejecución.  
-  - Usar **tareas con tamaño mínimo** (0,25 vCPU, 0,5 GB) en desarrollo/staging.  
-  - Apagar servicios (escala mínima 0) cuando no se usen, si su pipeline lo permite (por ejemplo, escala a 0 por la noche en staging).
+**Application Load Balancer (ALB)**
+
+- **Dos componentes de facturación:**  
+  1. **Hora de ALB** — se paga por cada hora (o fracción) que el balanceador exista; **es el coste fijo** que ves aunque no entre ni una petición.  
+  2. **LCU (Load Balancer Capacity Units)** — según conexiones nuevas, peticiones, bytes y reglas evaluadas; con **tráfico casi nulo** suele ser **mucho menor** que la línea de “hora de ALB”.
+- **Orden de magnitud:** en muchas regiones el cargo por hora del ALB equivale a **~USD 15–22/mes** por un solo ALB 24/7 (redondeando; **ver precio actual** en [Elastic Load Balancing pricing](https://aws.amazon.com/elasticloadbalancing/pricing/) o [AWS Pricing Calculator](https://calculator.aws/)).
+- **Ahorro en pre-producción:** eliminar el ALB si no lo necesitas; usar **un solo ALB** compartido por varios target groups en lugar de uno por entorno; para APIs HTTP de bajo tráfico valorar **API Gateway + Lambda** (p. ej. `api_flutter_v2/sam`) **sin** ALB.
+- **NLB:** también tiene cargo por hora + unidades de capacidad; no asumas que “cambia” el coste fijo de forma drástica sin comparar en la calculadora.
+
+**ECS Fargate**
+
+- **Modelo:** facturación por **vCPU-segundo** y **GB-segundo** de las tareas en ejecución (Linux/x86 o ARM según plataforma).
+- **Importante:** una **ECS Service** con `desiredCount: 1` implica **una tarea encendida todo el mes** salvo que automatices lo contrario; no es como Lambda.
+- **Reducir coste:** definición de tarea **mínima** (p. ej. **0,25 vCPU** y **0,5 GB** si la app lo tolera), **menos réplicas** en staging, o **detener** el servicio / bajar `desiredCount` a **0** en entornos de dev cuando no prueben (la consola o `aws ecs update-service --desired-count 0`).
+- **“Escala a 0”:** el servicio ECS clásico no escala solo a 0 por defecto; hay que **bajar desired count manualmente**, con eventos (EventBridge + Lambda), o diseños alternativos (p. ej. tareas programadas en lugar de servicio siempre encendido).
+
+**Resumen:** ALB ≈ coste fijo mensual notable; Fargate ≈ coste por **tiempo de CPU/RAM** de cada tarea. En pre-prod, lo más efectivo suele ser **no dejar ALB + Fargate encendidos** si ya tienes camino **Lambda** o no estás probando el contenedor.
 
 ---
 
@@ -99,18 +131,18 @@ Se pueden aplicar estos ajustes en los archivos de `arquitectura_aws/` para ento
 
 ### 3.1 `rds-databases.yaml`
 
-- **Default de clase:** Usar `db.t4g.micro` como default (más barata que t3 en muchas regiones).
-- **Retención de backups:** Añadir un parámetro opcional, por ejemplo `BackupRetentionPeriod`, con default **1** para no pagar 7 días de backups cuando no hace falta (en prod se puede pasar 7).
-
-En la plantilla actual ya está `DBInstanceClass` con default `db.t3.micro`; se puede cambiar el default a `db.t4g.micro` y añadir un parámetro para la retención (ver sección 4).
+- **Default de clase:** La plantilla ya usa **`db.t4g.micro`** por defecto (más barata que `t3.micro` en muchas regiones). Si el stack se creó antes, actualiza el parámetro `DBInstanceClass` en CloudFormation.
+- **Retención de backups:** Ya existe el parámetro **`BackupRetentionPeriod`** (default **1**). Para máximo ahorro en dev puedes pasar **0** (sin backup automático; solo con snapshot manual o antes de borrar).
+- **Almacenamiento:** `AllocatedStorage` default 20 GB; no subir hasta que lo necesites.
 
 ### 3.2 `template-sam.yaml` (Lambda Authorizer)
 
-- Si el Authorizer **no** consulta RDS (solo JWT), bajar `MemorySize` en `Globals.Function` a **128**.
+- **`MemorySize`:** Ya está en **128 MB** en `Globals.Function`. Si en el futuro subes memoria, hazlo solo si hace falta (más memoria = más coste por ms).
 
-### 3.3 Bastión
+### 3.3 `bastion.yaml`
 
-- No cambiar el tamaño; en la documentación (README/BASTION) dejar claro: **“Apagar la instancia cuando no se use para reducir costos”** y los comandos `stop-instances` / `start-instances`.
+- **Tipo de instancia:** Parámetro **`InstanceType`** con default **`t3.nano`** (más barato que `t3.micro` para SSH/túnel). Al **actualizar** un stack que ya tenía `t3.micro`, CloudFormation puede **reemplazar** la instancia (nueva IP, revisar SG).
+- **Operación:** Apagar la instancia cuando no se use (`stop-instances` / `start-instances`); ver README y BASTION.md.
 
 ---
 
@@ -118,11 +150,13 @@ En la plantilla actual ya está `DBInstanceClass` con default `db.t3.micro`; se 
 
 | Prioridad | Acción | Ahorro estimado |
 |-----------|--------|------------------|
-| 1 | **Apagar el bastión EC2** cuando no se use (o no desplegar bastión si no hace falta) | ~USD 8–10/mes |
-| 2 | **RDS:** Usar `db.t4g.micro`, retención de backup **1 día** en dev/staging | Varios USD/mes en almacenamiento de backups |
+| 1 | **Apagar el bastión EC2** cuando no se use (o no desplegar bastión si no hace falta) | ~USD 4–8/mes según tamaño y horas encendido |
+| 2 | **RDS:** `db.t4g.micro`, retención **0–1 día** en dev/staging (parámetros del stack) | Varios USD/mes (instancia + almacenamiento de backups) |
+| 1b | **Bastión:** `t3.nano` (plantilla actual) en lugar de `t3.micro` | ~20–30 % menos por hora de instancia |
 | 3 | **RDS:** No activar Multi-AZ en bajo uso (ya está en false) | Evita duplicar costo de instancia |
-| 4 | Revisar si tienen **ALB o ECS** desplegados sin uso; si sí, apagar o escala 0 | Hasta USD 16–22/mes (ALB) |
-| 5 | Lambda Authorizer a 128 MB si no usa RDS | Muy bajo, pero sin downside |
+| 4 | **ALB:** eliminar o no desplegar si no hace falta; **un solo ALB** si varios servicios | A menudo **~USD 15–22/mes** solo por el ALB + LCU con uso |
+| 4b | **ECS Fargate:** `desiredCount` 0 en dev cuando no prueben; tareas **0,25 vCPU / 0,5 GB** si aplica | Variable (varios USD a decenas USD/mes **por tarea** 24/7) |
+| 5 | Lambda Authorizer ya en **128 MB** en `template-sam.yaml` | Mantener; evitar VPC si no consulta RDS |
 | 6 | Un solo secret en Secrets Manager por entorno | Pequeño |
 | 7 | Para “desarrollo” puro: valorar **MySQL gestionado externo** (Railway, Render, PlanetScale) y usar RDS solo para staging/prod | Depende del uso |
 
@@ -150,4 +184,4 @@ El costo mensual razonable en us-east-1 sería del orden de **USD 15–20/mes** 
   - Fargate con tamaño mínimo por tarea y escala automática por demanda.  
 - **Alertas de costo:** Configurar **AWS Budgets** con alerta (ej. 50 USD o el equivalente en COP) para detectar picos y revisar qué recurso los causa.
 
-Si quieres, en el siguiente paso puedo proponerte los **diffs concretos** para `rds-databases.yaml` (parámetro de retención, default t4g) y para `template-sam.yaml` (128 MB), y un párrafo listo para pegar en `README.md` o `BASTION.md` sobre apagar el bastión.
+Para cifras exactas en tu región, usa siempre la **[AWS Pricing Calculator](https://calculator.aws/)** (ELB + Fargate + RDS por separado).

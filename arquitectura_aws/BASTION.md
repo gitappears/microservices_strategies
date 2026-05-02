@@ -30,17 +30,23 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" 
 
 | Dato | Valor |
 |------|--------|
-| **IP pública** | `3.236.168.134` (puede cambiar si el bastión se apagó y se volvió a encender; ver [Troubleshooting](#troubleshooting-connection-timed-out-al-hacer-ssh)) |
+| **IP pública (Elastic IP)** | `107.23.150.14` (estable entre stop/start de la instancia; liberar la EIP en AWS si ya no la usas) |
 | **Usuario SSH** | `ec2-user` |
 | **Clave privada** | `arquitectura_aws/qinspecting-bastion.pem` |
 | **Security Group bastión** | `sg-0bca7597802398cbc` |
 | **RDS endpoint** | `qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com` |
 
+## Elastic IP (IP pública estable)
+
+- La IP efímera **cambia** al parar/iniciar la instancia. Una **Elastic IP** asociada **sí se mantiene** entre stop/start (sigue habiendo cargo por IPv4 pública según precios actuales de VPC).
+- **Nuevo despliegue o actualización del stack:** la plantilla [`bastion.yaml`](bastion.yaml) crea `BastionElasticIp` + `BastionEipAssociation` y el output `BastionPublicIp` muestra la EIP.
+- **Bastión ya existente (sin redesplegar todo):** desde `arquitectura_aws/scripts/` ejecuta `./associate-bastion-elastic-ip.sh` (requiere AWS CLI y permisos `ec2:AllocateAddress` / `ec2:AssociateAddress`). Después **actualiza la IP** en esta tabla y en variables como `BASTION_IP`.
+
 ## Conexión
 
 ```bash
 # 1. SSH al bastión (desde la carpeta del repo)
-ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@3.236.168.134
+ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@107.23.150.14
 
 # 2. En el bastión: instalar MySQL client (solo la primera vez)
 sudo yum install -y mysql
@@ -51,47 +57,64 @@ mysql -h qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com -u qinspect_a
 
 ## Túnel SSH para APIs locales (qinspecting_api_nest, etc.)
 
-Para que una API que corre en tu PC (por ejemplo `qinspecting_api_nest`) se conecte a RDS, RDS no es accesible directamente desde internet. Hay que abrir un **túnel SSH con redirección de puerto** (-L) desde tu máquina al bastión y de ahí al RDS.
+Para que una API que corre en tu PC (por ejemplo `qinspecting_api_nest`) se conecte a RDS, RDS no es accesible directamente desde internet. Hay que abrir un **túnel SSH con redirección de puerto** (`-L`) desde tu máquina al bastión y de ahí al RDS (MySQL puerto **3306**).
+
+### Checklist antes del túnel
+
+1. **Bastión en ejecución** y IP actual en la tabla «Datos actuales» (Elastic IP recomendada).
+2. **Security group del bastión** (`sg-0bca7597802398cbc`): entrada **TCP 22** desde **tu IP pública** (`curl -s ifconfig.me`) en formato **`TU_IP/32`**. Si cambias de red, la IP cambia y SSH hará *timeout* hasta que actualices la regla.
+3. **Clave `.pem`** accesible (p. ej. `microservices_strategies/qinspecting-bastion.pem`).
 
 ### 1. Abrir el túnel (dejar esta terminal abierta)
 
-Desde la raíz del repo `bases_qinspecting`:
+**Opción A – script (recomendado)** desde `microservices_strategies/arquitectura_aws/scripts/`:
 
 ```bash
-ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134
+cd arquitectura_aws/scripts
+export BASTION_IP=107.23.150.14   # o la IP actual del bastión
+./start-rds-tunnel.sh
 ```
 
-Con eso, **localhost:3306** en tu PC redirige al puerto 3306 del RDS. No hace falta ejecutar nada dentro del bastión; la sesión puede quedar abierta.
+Por defecto redirige **`127.0.0.1:3306`** → RDS MySQL documentado. Variables útiles: `RDS_HOST`, `LOCAL_PORT`, `REMOTE_PORT`, `BASTION_KEY_PATH`.
+
+**Opción B – comando SSH manual** (desde la raíz del repo `microservices_strategies`):
+
+```bash
+ssh -i qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@107.23.150.14
+```
+
+Con eso, **localhost:3306** en tu PC redirige al puerto 3306 del RDS. No hace falta ejecutar nada dentro del bastión; la sesión debe permanecer abierta.
 
 ### 2. Configurar la API para usar el túnel
 
-En el `.env` del proyecto de la API (ej. `qinspecting_api_nest`):
+En el `.env` del proyecto de la API (ej. `qinspecting_api_nest`), con **`STAGE=dev`** y TypeORM **MySQL**:
 
-- **Host:** `127.0.0.1` (o `localhost`)
+- **Host:** `127.0.0.1`
 - **Puerto:** `3306`
-- **Usuario y contraseña:** los del RDS (`qinspect_admin` y la contraseña del stack)
-- **SSL:** desactivado al usar túnel (`DATABASE_SSL=false`)
+- **Usuario y contraseña:** los del RDS (`qinspect_admin` y la contraseña maestra / secret)
+- **Obligatorio:** `DATABASE_PASSWORD` no vacía (sin eso MySQL responde `using password: NO`).
+- **Cognito:** `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` para autenticación.
 
 Ejemplo mínimo:
 
 ```env
+STAGE=dev
 DATABASE_HOST=127.0.0.1
 DATABASE_PORT=3306
 DATABASE_USER=qinspect_admin
 DATABASE_PASSWORD=tu_password_rds
 DATABASE_NAME=bd_tenancy_planes
-DATABASE_SSL=false
 ```
 
-Si la API usa varias bases (tenancy, personal, mantenimientos, etc.), define cada una con `DATABASE_NAME_TENANCY`, `DATABASE_NAME_PERSONAL`, etc., según el proyecto.
+Si la API usa varias bases (tenancy, personal, mantenimientos, etc.), define cada una según el proyecto.
 
 ### Resumen
 
 | Paso | Acción |
 |------|--------|
-| 1 | Abrir túnel: `ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod....rds.amazonaws.com:3306 ec2-user@3.236.168.134` |
-| 2 | En `.env` de la API: `DATABASE_HOST=127.0.0.1`, `DATABASE_PORT=3306`, usuario/contraseña RDS, `DATABASE_SSL=false` |
-| 3 | Arrancar la API en otra terminal; se conectará a RDS a través del túnel |
+| 1 | Abrir túnel (`./start-rds-tunnel.sh` o `ssh -L 3306:...`) y **no cerrar** esa terminal |
+| 2 | En `.env` de la API: `DATABASE_*` hacia `127.0.0.1:3306` y credenciales RDS |
+| 3 | Arrancar la API en **otra** terminal |
 
 ## Crear las 7 bases desde el bastión
 
@@ -111,7 +134,7 @@ Opción B – Copiar el repo al bastión y ejecutar el script:
 
 ```bash
 # Desde tu PC: copiar scripts y DDL al bastión
-scp -i arquitectura_aws/qinspecting-bastion.pem -r refactor_ddl ec2-user@3.236.168.134:~
+scp -i arquitectura_aws/qinspecting-bastion.pem -r refactor_ddl ec2-user@107.23.150.14:~
 # En el bastión
 cd refactor_ddl && ./crear_bases_y_schema.sh qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com qinspect_admin '<password>'
 ```
@@ -122,10 +145,10 @@ Cuando cambies los archivos `refactor_ddl/*/00_schema.sql` en tu PC, así aplica
 
 ### 1. Copiar la carpeta DDL al bastión
 
-Desde tu PC (en la raíz del repo `bases_qinspecting`):
+Desde tu PC (en la raíz del repo `microservices_strategies`, o donde tengas `refactor_ddl`):
 
 ```bash
-scp -i arquitectura_aws/qinspecting-bastion.pem -r refactor_ddl ec2-user@3.236.168.134:~
+scp -i arquitectura_aws/qinspecting-bastion.pem -r refactor_ddl ec2-user@107.23.150.14:~
 ```
 
 ### 2. Conectarte al bastión y aplicar el esquema
@@ -133,19 +156,19 @@ scp -i arquitectura_aws/qinspecting-bastion.pem -r refactor_ddl ec2-user@3.236.1
 **Opción A – Actualizar una sola base desde tu PC** (túnel SSH abierto en otra terminal):
 
 ```bash
-# Terminal 1: deja el túnel abierto
-cd ~/Documents/projects/appears/bases_qinspecting
-ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134
+# Terminal 1: deja el túnel abierto (o usa arquitectura_aws/scripts/start-rds-tunnel.sh)
+cd /ruta/al/repo/microservices_strategies
+ssh -i qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@107.23.150.14
 
 # Terminal 2: aplica el schema (usa 127.0.0.1 porque el túnel redirige al RDS)
-cd ~/Documents/projects/appears/bases_qinspecting
+cd /ruta/al/repo/microservices_strategies
 mysql -h 127.0.0.1 -P 3306 -u qinspect_admin -p bd_capacitaciones < refactor_ddl/06_bd_capacitaciones/00_schema.sql
 ```
 
 **Opción A2 – Actualizar una base desde el bastión** (después de copiar refactor_ddl al bastión):
 
 ```bash
-ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@3.236.168.134
+ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@107.23.150.14
 
 mysql -h qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com -u qinspect_admin -p bd_capacitaciones < ~/refactor_ddl/06_bd_capacitaciones/00_schema.sql
 ```
@@ -181,7 +204,7 @@ Los `00_schema.sql` usan **CREATE TABLE IF NOT EXISTS**: se crean tablas nuevas 
 
 ## Troubleshooting: "Connection timed out" al hacer SSH
 
-Si `ssh ... ec2-user@3.236.168.134` devuelve **Connection timed out**, suele ser por:
+Si `ssh ... ec2-user@<IP_BASTION>` devuelve **Connection timed out**, suele ser por:
 
 1. **Bastión apagado** → la IP pública se pierde o cambia al encender de nuevo.
 2. **Tu IP pública cambió** → el Security Group solo permite SSH desde una IP concreta (`191.107.171.174/32`). Si cambiaste de red (Wi‑Fi, 4G, otra casa), tu IP ya no coincide.
@@ -196,7 +219,7 @@ aws ec2 describe-instances \
 ```
 
 - Si **State** es `stopped`: enciende la instancia con `aws ec2 start-instances --instance-ids <INSTANCE_ID>` y espera 1–2 minutos. Vuelve a ejecutar la query para obtener la **nueva** `PublicIpAddress` y usa esa IP en el comando `ssh`.
-- Si **State** es `running` y **PublicIpAddress** es distinta de `3.236.168.134`, usa la IP que salga en el comando SSH.
+- Si **State** es `running` y **PublicIpAddress** no coincide con la IP que tenías en documentación o scripts, usa siempre la IP que devuelva este comando (la tabla «Datos actuales» puede quedar desactualizada hasta que la actualices).
 
 ### 2. Ver tu IP pública actual
 
@@ -233,7 +256,7 @@ Si al usar el **túnel** (`ssh -i ... -L 3306:... ec2-user@...`) ves **"channel 
 
 1. Conéctate al bastión **sin** túnel (solo SSH normal):
    ```bash
-   ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@3.236.168.134
+   ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@107.23.150.14
    ```
 2. En el bastión, edita la configuración de SSH y habilita el reenvío:
    ```bash
@@ -243,7 +266,7 @@ Si al usar el **túnel** (`ssh -i ... -L 3306:... ec2-user@...`) ves **"channel 
    ```
 3. Sal del bastión (`exit`) y vuelve a abrir el túnel desde tu PC:
    ```bash
-   ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@3.236.168.134
+   ssh -i arquitectura_aws/qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 ec2-user@107.23.150.14
    ```
 
 En futuros despliegues con la plantilla `bastion.yaml` (CloudFormation), el UserData ya habilita `AllowTcpForwarding yes` al arrancar la instancia, así que no tendrás que hacer este paso manual.

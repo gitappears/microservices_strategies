@@ -8,10 +8,12 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 |-------------------|-------------|
 | [lambda-authorizer/](lambda-authorizer/) | Código del **Lambda Authorizer**: valida JWT y consulta Tenancy (RDS) para permitir o denegar la petición. |
 | [template-sam.yaml](template-sam.yaml) | Plantilla **AWS SAM**: API Gateway (HTTP API), Lambda Authorizer, permisos y variables. No incluye ECS/RDS (se crean aparte o en otro stack). |
+| [template-sam-cognito.yaml](template-sam-cognito.yaml) | Alternativa: **HTTP API + JWT authorizer nativo** (Cognito User Pool), sin Lambda previa. Para SPAs con login único vía Cognito. |
+| [COGNITO_API_GATEWAY.md](COGNITO_API_GATEWAY.md) | Despliegue y encaje con `qinspecting_api_nest` (`UnifiedAuthService`). |
 | [rds-databases.yaml](rds-databases.yaml) | Plantilla **CloudFormation** para crear la instancia **RDS MySQL 8** (7 bases por sistema). Tras el deploy, crear las bases con [refactor_ddl/crear_bases_y_schema.sh](../refactor_ddl/crear_bases_y_schema.sh). |
 | [rds-databases-config.yml](rds-databases-config.yml) | Configuración YAML de las 7 bases (nombre, charset, collation) para pipelines o scripts que ejecuten `CREATE DATABASE` en RDS. |
 | [scripts/](scripts/) | Scripts que usan el YAML: `create-databases-from-config.py` crea las bases leyendo `rds-databases-config.yml`. |
-| [bastion.yaml](bastion.yaml) | Plantilla opcional para bastión EC2 (acceso SSH y desde ahí a RDS). Si el deploy falla por hooks, ver [Acceso a RDS vía bastión](#acceso-a-rds-via-bastion). |
+| [bastion.yaml](bastion.yaml) | Bastión EC2 + **Elastic IP** estable (SSH/túnel a RDS). Script manual sin CF: [scripts/associate-bastion-elastic-ip.sh](scripts/associate-bastion-elastic-ip.sh). Detalle en [BASTION.md](BASTION.md). |
 | [api-gateway-rutas.md](api-gateway-rutas.md) | Rutas sugeridas y configuración de API Gateway (rutas, excepciones para `/auth`). |
 | [OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md) | Cómo reducir costos (RDS, bastión, VPC, ALB/ECS, Lambda). Incluye **mapeo factura ↔ plantillas** de esta carpeta. |
 | [RDS_UPGRADE_MYSQL_2026.md](RDS_UPGRADE_MYSQL_2026.md) | Fin de soporte MySQL 8.0 (31-jul-2026): actualizar a 8.4 LTS y pasos para instancias existentes. |
@@ -77,7 +79,7 @@ aws ec2 describe-instances \
 
 Salida esperada (ejemplo):
 
-- `running` + una IP (ej. `3.236.168.134`) + `i-xxxxx` → anota la **PublicIpAddress** para el paso 3.
+- `running` + una IP (ej. `107.23.150.14`) + `i-xxxxx` → anota la **PublicIpAddress** para el paso 3.
 - `stopped` → hay que encender la instancia (paso 2).
 
 #### 2. Si está apagado: encender el bastión
@@ -116,7 +118,7 @@ aws ec2 revoke-security-group-ingress --group-id sg-0bca7597802398cbc --protocol
 
 Usa la **IP del bastión** que obtuviste en el paso 1 (y, si lo encendiste, la nueva IP del paso 2).
 
-**Desde la raíz del repo `bases_qinspecting`:**
+**Desde la raíz del repo `microservices_strategies` (o usa `arquitectura_aws/scripts/start-rds-tunnel.sh`):**
 
 - **Túnel** (para que tu API local use RDS vía `127.0.0.1:3306`):
 
@@ -130,7 +132,7 @@ Usa la **IP del bastión** que obtuviste en el paso 1 (y, si lo encendiste, la n
   ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@<IP_BASTION>
   ```
 
-Sustituye `<IP_BASTION>` por la IP que devolvió el `describe-instances` (ej. `3.236.168.134`). Si la IP cambió al encender el bastión, **usa siempre la IP actual**, no una IP antigua guardada en documentación.
+Sustituye `<IP_BASTION>` por la IP que devolvió el `describe-instances` (ej. `107.23.150.14`). Si la IP cambió al encender el bastión, **usa siempre la IP actual**, no una IP antigua guardada en documentación.
 
 ---
 

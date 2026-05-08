@@ -2,6 +2,112 @@
 
 Bastión EC2 para conectarte a RDS (en subnets privadas) por SSH y desde ahí ejecutar MySQL.
 
+<a id="flujo-bastion-tunel"></a>
+
+## Flujo completo (bastión y túnel)
+
+Sigue estos pasos **en orden** cada vez que el bastión estuviera apagado o hayas cambiado de red (Wi‑Fi, oficina, datos móviles). Necesitas **AWS CLI** configurado (`aws sts get-caller-identity` debe funcionar) y la clave **`qinspecting-bastion.pem`** en `arquitectura_aws/` o en la raíz de `microservices_strategies/`.
+
+### Paso 1: Comprobar estado, `InstanceId` e IP pública del bastión
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=qinspecting-bastion" \
+  --query "Reservations[].Instances[].[State.Name,PublicIpAddress,InstanceId]" \
+  --output table
+```
+
+- Si **State** es **`stopped`**, enciende y espera 1–2 minutos hasta que pase a **`running`**:
+
+```bash
+aws ec2 start-instances --instance-ids <INSTANCE_ID>
+# Repetir describe-instances hasta ver running y PublicIpAddress
+```
+
+- Anota la columna **PublicIpAddress** (con Elastic IP suele coincidir con la tabla [Datos actuales](#datos-actuales)). Úsala en los comandos siguientes como **`BASTION_IP`**.
+
+<a id="paso-sg-ssh"></a>
+
+### Paso 2: Permitir SSH (puerto 22) desde tu IP pública actual
+
+El security group del bastión solo acepta SSH desde IPs que hayas autorizado explícitamente. **Si tu IP cambió**, verás `Connection timed out` al puerto 22 hasta que ejecutes esto.
+
+**Importante (zsh/bash):** el nombre de la variable debe ser un identificador válido (por ejemplo `MY_IP`). No uses la IP como nombre de variable (`186.x.x.x=...` o `107.x=...` falla con *command not found*).
+
+```bash
+MY_IP=$(curl -s ifconfig.me)
+echo "Mi IP pública: ${MY_IP}"
+
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0bca7597802398cbc \
+  --protocol tcp \
+  --port 22 \
+  --cidr "${MY_IP}/32"
+```
+
+Si AWS responde que la regla **ya existe**, no hay problema. Para quitar una IP que ya no uses, usa `revoke-security-group-ingress` con el mismo `--cidr`.
+
+### Paso 3 (opcional): Probar SSH al bastión sin túnel
+
+Sustituye la ruta al `.pem` y la IP si difieren de las tuyas.
+
+```bash
+ssh -i arquitectura_aws/qinspecting-bastion.pem ec2-user@<BASTION_IP>
+```
+
+Si entras, puedes salir con `exit` y seguir con el túnel.
+
+### Paso 4: Abrir el túnel SSH (dejar la terminal abierta)
+
+Desde el repo, carpeta de scripts:
+
+```bash
+cd microservices_strategies/arquitectura_aws/scripts
+export BASTION_IP=<PublicIpAddress>   # opcional si AWS CLI devuelve bien la instancia running
+./start-rds-tunnel.sh
+```
+
+El script imprime algo como `Túnel: 127.0.0.1:3306 -> <RDS>:3306 via ec2-user@<BASTION_IP>`. **No cierres esta terminal** mientras uses el túnel. `Ctrl+C` lo cierra.
+
+Equivalente manual (desde la raíz de `microservices_strategies` si el `.pem` está ahí):
+
+```bash
+ssh -N -i qinspecting-bastion.pem \
+  -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com:3306 \
+  ec2-user@<BASTION_IP>
+```
+
+### Paso 5: Configurar la API local y arrancarla en otra terminal
+
+Con el túnel activo, el host de la base es **tu máquina**:
+
+| Variable / concepto | Valor |
+|---------------------|--------|
+| Host | `127.0.0.1` |
+| Puerto MySQL | `3306` |
+| Usuario | `qinspect_admin` (u el definido en RDS) |
+| Contraseña | La del RDS / secret (no vacía) |
+
+Ejemplo mínimo en `.env` (ver detalle en [Configurar la API para usar el túnel](#config-api-tunel) más abajo):
+
+```env
+DATABASE_HOST=127.0.0.1
+DATABASE_PORT=3306
+DATABASE_USER=qinspect_admin
+DATABASE_PASSWORD=<tu_password_rds>
+```
+
+En **otra** terminal, arranca la API (Nest, etc.).
+
+### Paso 6: Al terminar, cerrar túnel y (opcional) apagar el bastión
+
+1. En la terminal del túnel: `Ctrl+C`.
+2. Para dejar de pagar cómputo del bastión: [Apagar el bastión](#apagar-bastion).
+
+---
+
+<a id="apagar-bastion"></a>
+
 ## Reducir costos: apagar el bastión cuando no se use
 
 El bastión es una instancia EC2 que cobra por horas de uso. **Se recomienda apagarlo cuando no lo vayas a usar** y encenderlo solo cuando necesites acceso a RDS. Así dejas de pagar por vCPU/memoria (solo se cobra el disco EBS, mucho menor).
@@ -16,15 +122,17 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" 
 aws ec2 stop-instances --instance-ids <INSTANCE_ID>
 ```
 
-**Cuando vuelvas a necesitar acceso:** encender el bastión, comprobar si la IP cambió y, si tu IP pública cambió, actualizar el Security Group. El **paso a paso completo** (encender → comprobar estado e IP → configurar tu IP en el SG → conectar) está en el [README – Acceso a RDS vía bastión](README.md#acceso-a-rds-vía-bastión).
+**Cuando vuelvas a necesitar acceso:** sigue el [Flujo completo (bastión y túnel)](#flujo-bastion-tunel) de arriba (encender → IP en el SG → túnel). También puedes revisar el [README – Acceso a RDS vía bastión](README.md#acceso-a-rds-vía-bastión) si enlaza contexto adicional.
 
-Resumen rápido para encender:
+Resumen mínimo solo para encender:
 
 ```bash
 aws ec2 start-instances --instance-ids <INSTANCE_ID>
-# Esperar 1–2 min, luego obtener la nueva IP:
+# Esperar 1–2 min, luego comprobar estado e IP:
 aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" --query "Reservations[].Instances[].[State.Name,PublicIpAddress]" --output table
 ```
+
+<a id="datos-actuales"></a>
 
 ## Datos actuales
 
@@ -59,10 +167,12 @@ mysql -h qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com -u qinspect_a
 
 Para que una API que corre en tu PC (por ejemplo `qinspecting_api_nest`) se conecte a RDS, RDS no es accesible directamente desde internet. Hay que abrir un **túnel SSH con redirección de puerto** (`-L`) desde tu máquina al bastión y de ahí al RDS (MySQL puerto **3306**).
 
+El orden recomendado está en [Flujo completo (bastión y túnel)](#flujo-bastion-tunel). Aquí se amplía con checklist y opciones.
+
 ### Checklist antes del túnel
 
-1. **Bastión en ejecución** y IP actual en la tabla «Datos actuales» (Elastic IP recomendada).
-2. **Security group del bastión** (`sg-0bca7597802398cbc`): entrada **TCP 22** desde **tu IP pública** (`curl -s ifconfig.me`) en formato **`TU_IP/32`**. Si cambias de red, la IP cambia y SSH hará *timeout* hasta que actualices la regla.
+1. **Bastión en ejecución** y **PublicIpAddress** actual (compruébalo con `describe-instances`; la tabla «Datos actuales» puede desfasarse).
+2. **Security group del bastión** (`sg-0bca7597802398cbc`): entrada **TCP 22** desde **tu IP pública** en **`${MY_IP}/32`** (ver [Paso 2: permitir SSH](#paso-sg-ssh)). Si cambias de red, SSH hará *timeout* hasta que autorices la nueva IP.
 3. **Clave `.pem`** accesible (p. ej. `microservices_strategies/qinspecting-bastion.pem`).
 
 ### 1. Abrir el túnel (dejar esta terminal abierta)
@@ -84,6 +194,8 @@ ssh -i qinspecting-bastion.pem -L 3306:qinspecting-prod.cmb8y2g0mlda.us-east-1.r
 ```
 
 Con eso, **localhost:3306** en tu PC redirige al puerto 3306 del RDS. No hace falta ejecutar nada dentro del bastión; la sesión debe permanecer abierta.
+
+<a id="config-api-tunel"></a>
 
 ### 2. Configurar la API para usar el túnel
 
@@ -202,12 +314,14 @@ Los `00_schema.sql` usan **CREATE TABLE IF NOT EXISTS**: se crean tablas nuevas 
 - escribir y ejecutar **ALTER TABLE** a mano en esa base, o  
 - **borrar esa base**, crearla de nuevo y volver a ejecutar su `00_schema.sql` (solo si puedes perder los datos de esa base).
 
+<a id="troubleshooting-ssh-timeout"></a>
+
 ## Troubleshooting: "Connection timed out" al hacer SSH
 
 Si `ssh ... ec2-user@<IP_BASTION>` devuelve **Connection timed out**, suele ser por:
 
-1. **Bastión apagado** → la IP pública se pierde o cambia al encender de nuevo.
-2. **Tu IP pública cambió** → el Security Group solo permite SSH desde una IP concreta (`191.107.171.174/32`). Si cambiaste de red (Wi‑Fi, 4G, otra casa), tu IP ya no coincide.
+1. **Bastión apagado** → no hay SSH hasta que la instancia esté en `running`.
+2. **Tu IP pública cambió** → el Security Group solo permite SSH desde los CIDR que hayas añadido (`/32` por máquina). Si cambiaste de red (Wi‑Fi, 4G, otra casa), autoriza de nuevo con `MY_IP` como en el [Paso 2 del flujo completo](#paso-sg-ssh).
 
 ### 1. Comprobar estado del bastión y su IP actual
 
@@ -227,25 +341,25 @@ aws ec2 describe-instances \
 curl -s ifconfig.me
 ```
 
-Compara con la IP permitida en el SG (`191.107.171.174`). Si es distinta, hay que actualizar la regla.
+Compara con las reglas **SSH (22)** del SG en la consola EC2. Si tu IP actual no está en ningún `/32` que uses, añade una regla nueva.
 
 ### 3. Actualizar el Security Group con tu IP actual
 
-Permitir SSH solo desde tu IP actual (reemplaza `TU_IP_ACTUAL` por la que devolvió `curl -s ifconfig.me`):
-
-```bash
-# Quitar la regla antigua (opcional, si quieres dejar solo una IP)
-aws ec2 revoke-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr 191.107.171.174/32
-
-# Añadir tu IP actual
-aws ec2 authorize-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr TU_IP_ACTUAL/32
-```
-
-O en un solo paso (añade la nueva IP sin borrar la anterior, por si usas varias redes):
+Añadir tu IP actual (usa siempre una variable con nombre válido, p. ej. `MY_IP`; no uses la IP como nombre de variable):
 
 ```bash
 MY_IP=$(curl -s ifconfig.me)
-aws ec2 authorize-security-group-ingress --group-id sg-0bca7597802398cbc --protocol tcp --port 22 --cidr ${MY_IP}/32
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0bca7597802398cbc \
+  --protocol tcp --port 22 --cidr "${MY_IP}/32"
+```
+
+Para quitar una IP que ya no uses (sustituye el CIDR exacto de la regla antigua):
+
+```bash
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-0bca7597802398cbc \
+  --protocol tcp --port 22 --cidr 203.0.113.50/32
 ```
 
 Después de esto, prueba de nuevo el SSH (con la IP del bastión que obtuviste en el paso 1).
@@ -275,7 +389,7 @@ En futuros despliegues con la plantilla `bastion.yaml` (CloudFormation), el User
 
 ## Seguridad
 
-- SSH (22) está permitido **solo desde tu IP** (p. ej. `191.107.171.174/32`). Si tu IP cambia (otra red, otro lugar), actualiza la regla en el SG `sg-0bca7597802398cbc` (ver [Troubleshooting](#troubleshooting-connection-timed-out-al-hacer-ssh)).
+- SSH (22) debe estar permitido **solo desde IPs que controles** (típicamente `TU_IP/32`). Si tu IP cambia, actualiza el SG `sg-0bca7597802398cbc` (ver [Troubleshooting: timeout SSH](#troubleshooting-ssh-timeout) y [Paso 2 del flujo](#paso-sg-ssh)).
 - RDS (3306) acepta tráfico **solo desde el SG del bastión**, no desde internet.
 - El archivo `.pem` está en `.gitignore`; no lo subas al repositorio.
 

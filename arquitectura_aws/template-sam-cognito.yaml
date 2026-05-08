@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  QInspecting - API Gateway HTTP API con autorizador JWT nativo de Cognito User Pools.
+  Alternativa a template-sam.yaml (Lambda Authorizer + JWT_SECRET). El monolito Nest
+  detrás del ALB puede seguir validando el mismo access token (JWKS) o confiar solo en Gateway.
+
+Parameters:
+  CognitoUserPoolId:
+    Type: String
+    Description: >
+      ID del pool (ej. us-east-1_XXXXXXXXX). El issuer será
+      https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}
+  CognitoAppClientId:
+    Type: String
+    Description: >
+      App client id del SPA (audience). Para varios clientes, despliega con SAM o une rutas
+      en la consola usando la misma lista en JwtConfiguration.Audience.
+  StageName:
+    Type: String
+    Default: prod
+    Description: Stage del HTTP API
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: nodejs20.x
+
+Resources:
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: qinspecting-api-cognito
+      StageName: !Ref StageName
+      CorsConfiguration:
+        AllowOrigins:
+          - https://app.qinspecting.com
+          - http://localhost:3000
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+          - X-Id-Empresa
+        MaxAge: 3600
+      Auth:
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              Audience:
+                - !Ref CognitoAppClientId
+              Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}'
+        DefaultAuthorizer: CognitoJwtAuthorizer
+      # Rutas e integraciones HTTP al ALB del monolito Nest: ver COGNITO_API_GATEWAY.md
+
+Outputs:
+  ApiEndpoint:
+    Description: URL base del HTTP API (todas las rutas protegidas usan JWT Cognito salvo excepciones)
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com/${StageName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'

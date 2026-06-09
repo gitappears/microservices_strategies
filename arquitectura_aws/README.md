@@ -14,9 +14,20 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 | [rds-databases-config.yml](rds-databases-config.yml) | Configuración YAML de las 7 bases (nombre, charset, collation) para pipelines o scripts que ejecuten `CREATE DATABASE` en RDS. |
 | [scripts/](scripts/) | Scripts que usan el YAML: `create-databases-from-config.py` crea las bases leyendo `rds-databases-config.yml`. |
 | [bastion.yaml](bastion.yaml) | Bastión EC2 + **Elastic IP** estable (SSH/túnel a RDS). Script manual sin CF: [scripts/associate-bastion-elastic-ip.sh](scripts/associate-bastion-elastic-ip.sh). Detalle en [BASTION.md](BASTION.md). |
+| [network/](network/) | VPC con **dev sin NAT** / **prod con NAT** (`vpc-network.yaml`). Migración del entorno actual: [network/README-NETWORK.md](network/README-NETWORK.md) y [scripts/disable-nat-existing-vpc.sh](scripts/disable-nat-existing-vpc.sh). |
 | [api-gateway-rutas.md](api-gateway-rutas.md) | Rutas sugeridas y configuración de API Gateway (rutas, excepciones para `/auth`). |
 | [OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md) | Cómo reducir costos (RDS, bastión, VPC, ALB/ECS, Lambda). Incluye **mapeo factura ↔ plantillas** de esta carpeta. |
 | [RDS_UPGRADE_MYSQL_2026.md](RDS_UPGRADE_MYSQL_2026.md) | Fin de soporte MySQL 8.0 (31-jul-2026): actualizar a 8.4 LTS y pasos para instancias existentes. |
+
+## Red VPC (dev sin NAT / prod con NAT)
+
+En **desarrollo** no hace falta NAT Gateway (~32 USD/mes): RDS, bastión y API Gateway/Lambda (sin VPC) funcionan sin él.
+
+| Entorno | NAT | Cómo |
+|---------|-----|------|
+| **Dev actual** (`vpc-04547d461f905b589`) | **Desactivado** (verificado) | `./scripts/verify-nat-status.sh` — ver [network/README-NETWORK.md](network/README-NETWORK.md) |
+| **Dev nuevo** | No | `./scripts/deploy-network.sh dev` |
+| **Prod** | Sí | `./scripts/deploy-network.sh prod` |
 
 ## Crear RDS y las bases de datos
 

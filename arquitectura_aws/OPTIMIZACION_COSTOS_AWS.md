@@ -20,7 +20,7 @@ Las plantillas de esta carpeta **no crean la VPC ni el NAT Gateway**; solo **RDS
 
 1. Bastión EC2 → `aws ec2 stop-instances --instance-ids <id>` (o consola) cuando no trabajes con RDS desde tu PC.  
 2. RDS → confirmar `DBInstanceClass` y `BackupRetentionPeriod` en el stack (parámetros de `rds-databases.yaml`).  
-3. Buscar **NAT Gateway** en la región: si hay uno “por si acaso” y las Lambdas salen a internet **sin** VPC, valorar eliminar NAT en entornos de dev (requiere rediseño de subnets/rutas).  
+3. **NAT Gateway en dev:** usar [scripts/disable-nat-existing-vpc.sh](scripts/disable-nat-existing-vpc.sh) o desplegar [network/vpc-network.yaml](network/vpc-network.yaml) con `EnableNatGateway=false`. Prod conserva NAT vía [network/parameters-prod.json](network/parameters-prod.json). Guía: [network/README-NETWORK.md](network/README-NETWORK.md).  
 4. Revisar **ALB + ECS** si el coste de ELB/ECS aparece: son candidatos a apagar hasta producción.
 
 ---

@@ -1,0 +1,40 @@
+# Gateway VPC endpoint para Amazon S3 (sin coste por hora; ideal Lambda en VPC sin NAT).
+#
+# Deploy:
+#   aws cloudformation deploy \
+#     --template-file network/vpc-endpoint-s3.yaml \
+#     --stack-name qinspecting-vpc-endpoint-s3-dev \
+#     --parameter-overrides VpcId=vpc-xxx PrivateRouteTableIds=rtb-xxx
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: QInspecting — VPC gateway endpoint S3 (dev sin NAT)
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+  PrivateRouteTableIds:
+    Type: List<AWS::EC2::RouteTable::Id>
+    Description: Route tables de subnets privadas (Lambda/RDS)
+
+Resources:
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds: !Ref PrivateRouteTableIds
+      Tags:
+        - Key: Name
+          Value: !Sub 'qinspecting-${EnvironmentName}-s3-gateway'
+
+Outputs:
+  VpcEndpointId:
+    Value: !Ref S3GatewayEndpoint
+  ServiceName:
+    Value: !Sub 'com.amazonaws.${AWS::Region}.s3'

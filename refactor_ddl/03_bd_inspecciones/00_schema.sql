@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS `preop_resumen_preoperacional` (
 
 -- Preop: respuestas preoperacional
 CREATE TABLE IF NOT EXISTS `preop_rta_preoperacional` (
-  `id_rta_preop` INT(20) NOT NULL,
+  `id_rta_preop` INT(20) NOT NULL AUTO_INCREMENT,
   `id_empresa` INT(11) NOT NULL,
   `rta_usuario` VARCHAR(10) NOT NULL,
   `id_preoperacional` INT(11) NOT NULL,

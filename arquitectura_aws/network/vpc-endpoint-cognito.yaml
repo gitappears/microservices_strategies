@@ -1,0 +1,67 @@
+# Interface VPC endpoint para Amazon Cognito Identity Provider (cognito-idp).
+# Permite que Lambda/RDS en subnets privadas SIN NAT llamen a Cognito (login, admin API).
+#
+# Deploy:
+#   ./scripts/deploy-cognito-vpc-endpoint.sh dev
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: QInspecting — VPC interface endpoint cognito-idp (dev sin NAT)
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Etiqueta de entorno
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC donde corre Lambda backend y RDS
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets privadas (mismas AZs que Lambda en VPC)
+
+  LambdaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group de la Lambda backend (origen HTTPS 443)
+
+Resources:
+  CognitoEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'VPC endpoint cognito-idp (${EnvironmentName})'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref LambdaSecurityGroupId
+          Description: Lambda backend to Cognito endpoint
+      Tags:
+        - Key: Name
+          Value: !Sub 'qinspecting-${EnvironmentName}-vpce-cognito-sg'
+
+  CognitoIdpVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.cognito-idp'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: !Ref PrivateSubnetIds
+      SecurityGroupIds:
+        - !Ref CognitoEndpointSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub 'qinspecting-${EnvironmentName}-cognito-idp'
+
+Outputs:
+  VpcEndpointId:
+    Description: ID del VPC endpoint cognito-idp
+    Value: !Ref CognitoIdpVpcEndpoint
+  EndpointSecurityGroupId:
+    Description: SG del endpoint (443 desde Lambda)
+    Value: !Ref CognitoEndpointSecurityGroup
+  ServiceName:
+    Description: Servicio AWS del endpoint
+    Value: !Sub 'com.amazonaws.${AWS::Region}.cognito-idp'

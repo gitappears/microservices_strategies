@@ -2,8 +2,13 @@
 
 El esquema está alineado con las entidades TypeORM de **qinspecting_api_nest**. **Nombres de tablas en snake_case**; columnas en camelCase (mapeo con `@Column({ name: '...' })`). Se añade `id_empresa` en tablas transaccionales para multi-tenancy.
 
-- **00_schema.sql**: solo tablas de dominio (cap_*). Sin duplicar catálogos.
+- **00_schema.sql**: solo tablas de dominio legacy (cap_*). Sin duplicar catálogos.
 - **01_catalogos.sql**: catálogos (tipo_adjuntos, cursos_certificados, tipo_pregunta, area). Opcional si ya existen en bd_personal.
+- **02_training_lms.sql**: dominio LMS Formar360 (`capacitaciones`, `inscripciones`, …). **Tabla canónica de cursos.**
+- **03_unify_capacitaciones_bridge.sql**: columna `cap_capacitacion.lms_capacitacion_id` + FKs LMS.
+- **04_migrate_cap_legacy_to_lms.sql**: copia idempotente legacy → LMS.
+
+Ver [MAPEO_MULTITENANT.md](MAPEO_MULTITENANT.md) para la relación `cap_capacitacion` ↔ `capacitaciones`.
 
 En las entidades NestJS usar `@Entity('nombre_snake_case')` para que coincida con la BD.
 

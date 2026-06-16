@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Crea VPC interface endpoint com.amazonaws.<region>.cognito-idp para Lambda en VPC sin NAT.
+# Crea VPC interface endpoint com.amazonaws.<region>.cognito-idp para compute en VPC sin NAT.
+# Historico: Lambda backend. Actual: EC2 API (qinspecting-api-ec2-*) si se mueve a subnet privada.
 #
 # Uso:
 #   aws sts get-caller-identity   # renovar credenciales si ExpiredToken
 #   ./scripts/deploy-cognito-vpc-endpoint.sh dev
-#   ./scripts/deploy-cognito-vpc-endpoint.sh dev man-qinspecting-backend-api-dev-handler
+#   ./scripts/deploy-cognito-vpc-endpoint.sh dev <instance-id-o-sg-ec2-api>
+#   EC2_API_SG=sg-015ad3b3b0d117e67 ./scripts/deploy-cognito-vpc-endpoint.sh dev
 #
 set -euo pipefail
 
 ENV="${1:-dev}"
 LAMBDA_FN="${2:-man-qinspecting-backend-api-dev-handler}"
+EC2_API_SG="${EC2_API_SG:-${3:-}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REGION="${AWS_REGION:-us-east-1}"
@@ -115,6 +118,15 @@ for SG in $LAMBDA_ALL_SGS; do
     --ip-permissions "IpProtocol=tcp,FromPort=443,ToPort=443,UserIdGroupPairs=[{GroupId=$SG,Description='Lambda SG to Cognito endpoint'}]" \
     2>/dev/null || true
 done
+
+if [[ -n "$EC2_API_SG" && "$EC2_API_SG" != "None" ]]; then
+  aws ec2 authorize-security-group-ingress \
+    --region "$REGION" \
+    --group-id "$ENDPOINT_SG" \
+    --ip-permissions "IpProtocol=tcp,FromPort=443,ToPort=443,UserIdGroupPairs=[{GroupId=$EC2_API_SG,Description='EC2 API to Cognito endpoint'}]" \
+    2>/dev/null || true
+  echo "==> EC2 API SG autorizado en endpoint: $EC2_API_SG"
+fi
 
 echo ""
 echo "==> Outputs del stack:"

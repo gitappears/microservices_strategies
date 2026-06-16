@@ -80,7 +80,13 @@ Cuando el uso es bajo, la mayor parte del costo **no** viene del tráfico, sino 
 
 ---
 
-### 2.3 API Gateway + Lambda Authorizer
+### 2.3 API NestJS (qinspecting_api_nest) — EC2 en lugar de Lambda
+
+Desde 2026-06 el backend Nest principal corre en **EC2 t4g.micro** (~USD 6–8/mes fijo) con API Gateway HTTP como proxy. Evita el límite de 250 MB descomprimido de Lambda y el pipeline CodeBuild de zip S3.
+
+Detalle: [API_EC2.md](API_EC2.md).
+
+### 2.4 API Gateway + Lambda Authorizer
 
 - **API Gateway HTTP API:** Cobran por millón de solicitudes; con poco tráfico el costo es despreciable. No hace falta cambiar nada por costo en esta fase.
 - **Lambda Authorizer:**  

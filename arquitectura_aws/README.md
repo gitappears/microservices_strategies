@@ -16,12 +16,22 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 | [bastion.yaml](bastion.yaml) | Bastión EC2 + **Elastic IP** estable (SSH/túnel a RDS). Script manual sin CF: [scripts/associate-bastion-elastic-ip.sh](scripts/associate-bastion-elastic-ip.sh). Detalle en [BASTION.md](BASTION.md). |
 | [network/](network/) | VPC con **dev sin NAT** / **prod con NAT** (`vpc-network.yaml`). Migración del entorno actual: [network/README-NETWORK.md](network/README-NETWORK.md) y [scripts/disable-nat-existing-vpc.sh](scripts/disable-nat-existing-vpc.sh). |
 | [api-gateway-rutas.md](api-gateway-rutas.md) | Rutas sugeridas y configuración de API Gateway (rutas, excepciones para `/auth`). |
+| [API_EC2.md](API_EC2.md) | **API NestJS en EC2** (reemplazo de Lambda): arquitectura, stacks CFN, URLs del front, migración prod. |
 | [OPTIMIZACION_COSTOS_AWS.md](OPTIMIZACION_COSTOS_AWS.md) | Cómo reducir costos (RDS, bastión, VPC, ALB/ECS, Lambda). Incluye **mapeo factura ↔ plantillas** de esta carpeta. |
 | [RDS_UPGRADE_MYSQL_2026.md](RDS_UPGRADE_MYSQL_2026.md) | Fin de soporte MySQL 8.0 (31-jul-2026): actualizar a 8.4 LTS y pasos para instancias existentes. |
 
 ## Red VPC (dev sin NAT / prod con NAT)
 
-En **desarrollo** no hace falta NAT Gateway (~32 USD/mes): RDS, bastión y API Gateway/Lambda (sin VPC) funcionan sin él.
+En **desarrollo** no hace falta NAT Gateway (~32 USD/mes): RDS, bastión y API en EC2 (subnet pública + EIP) funcionan sin él.
+
+### API backend (qinspecting_api_nest)
+
+| Antes | Ahora |
+|-------|-------|
+| Lambda + zip S3 + CodePipeline | **EC2 t4g.micro** + systemd + nginx + Redis Docker |
+| URL front vía API Gateway | **Igual** — HTTP API → proxy EC2 :80 |
+
+Detalle: **[API_EC2.md](API_EC2.md)**. Plantillas en `qinspecting_api_nest/cloudformation/` (`api-ec2.yaml`, `http-api-ec2-proxy.yaml`).
 
 | Entorno | NAT | Cómo |
 |---------|-----|------|

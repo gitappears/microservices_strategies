@@ -13,6 +13,8 @@ INSERT INTO `ten_empresas` (
 SELECT
   `Id_empresa`,
   `Razon_social`,
+  -- Origen planesQi no tiene columna NIT. Ejecutar scripts/backfill-ten-empresas-nit.js
+  -- para poblar nit desde el esquema legacy (`base`.empresa.nit).
   COALESCE(SUBSTRING_INDEX(Razon_social, '-', 1), '') AS nit,
   `Digito_verificacion`,
   `Direccion`,

@@ -4,7 +4,7 @@ Ejecutar **01_migrate_from_planesQi.sql** con la base de datos de **origen** (qi
 
 | Tabla origen (planesQi) | Tabla destino (bd_tenancy_planes) | Notas |
 |-------------------------|-----------------------------------|--------|
-| Empresas                | ten_empresas                      | `base` → base_legacy; nit se puede derivar de Razon_social si no existe en origen |
+| Empresas                | ten_empresas                      | `base` → base_legacy; **NIT** desde esquema legacy `{base}.empresa.nit` (ver `scripts/backfill-ten-empresas-nit.js`). No derivar de `Razon_social`. |
 | planes                  | ten_planes                        | Directo |
 | Planes_empresas         | ten_planes_empresas               | estado_pago=1, vigente_hasta=NULL por defecto |
 | Empleados               | ten_empleados_qi                  | Directo |

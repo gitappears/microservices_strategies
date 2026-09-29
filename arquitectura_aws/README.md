@@ -10,8 +10,8 @@ Plantillas y código de referencia para desplegar en AWS la arquitectura de micr
 | [template-sam.yaml](template-sam.yaml) | Plantilla **AWS SAM**: API Gateway (HTTP API), Lambda Authorizer, permisos y variables. No incluye ECS/RDS (se crean aparte o en otro stack). |
 | [template-sam-cognito.yaml](template-sam-cognito.yaml) | Alternativa: **HTTP API + JWT authorizer nativo** (Cognito User Pool), sin Lambda previa. Para SPAs con login único vía Cognito. |
 | [COGNITO_API_GATEWAY.md](COGNITO_API_GATEWAY.md) | Despliegue y encaje con `qinspecting_api_nest` (`UnifiedAuthService`). |
-| [rds-databases.yaml](rds-databases.yaml) | Plantilla **CloudFormation** para crear la instancia **RDS MySQL 8** (7 bases por sistema). Tras el deploy, crear las bases con [refactor_ddl/crear_bases_y_schema.sh](../refactor_ddl/crear_bases_y_schema.sh). |
-| [rds-databases-config.yml](rds-databases-config.yml) | Configuración YAML de las 7 bases (nombre, charset, collation) para pipelines o scripts que ejecuten `CREATE DATABASE` en RDS. |
+| [rds-databases.yaml](rds-databases.yaml) | Plantilla **CloudFormation** para crear la instancia **RDS MySQL 8** (8 bases por sistema). Tras el deploy, crear las bases con [refactor_ddl/crear_bases_y_schema.sh](../refactor_ddl/crear_bases_y_schema.sh). |
+| [rds-databases-config.yml](rds-databases-config.yml) | Configuración YAML de las **8 bases** (nombre, charset, collation) para pipelines o scripts que ejecuten `CREATE DATABASE` en RDS. Sincronizado con bastión 2026-09-29. |
 | [scripts/](scripts/) | Scripts que usan el YAML: `create-databases-from-config.py` crea las bases leyendo `rds-databases-config.yml`. |
 | [bastion.yaml](bastion.yaml) | Bastión EC2 + **Elastic IP** estable (SSH/túnel a RDS). Script manual sin CF: [scripts/associate-bastion-elastic-ip.sh](scripts/associate-bastion-elastic-ip.sh). Detalle en [BASTION.md](BASTION.md). |
 | [network/](network/) | VPC con **dev sin NAT** / **prod con NAT** (`vpc-network.yaml`). Migración del entorno actual: [network/README-NETWORK.md](network/README-NETWORK.md) y [scripts/disable-nat-existing-vpc.sh](scripts/disable-nat-existing-vpc.sh). |

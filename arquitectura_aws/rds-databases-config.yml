@@ -1,5 +1,6 @@
 # Configuración de bases de datos para RDS QInspecting
 # Ref: PLAN_TRABAJO_MICROSERVICIOS_QINSPECTING.md §2.1, §3.2
+# Sincronizado con bastión RDS (2026-09-29): 8 bases refactor (+ legacy aparte).
 #
 # Uso:
 #   - Con refactor_ddl/crear_bases_y_schema.sh (lee esta lista implícita).
@@ -12,19 +13,24 @@ defaults:
 
 databases:
   - name: bd_tenancy_planes
-    description: Empresas, planes, planes_empresas, estado de pago, mensajes
+    description: Empresas, planes, planes_empresas, capacidades, empleados QI, mensajes, régimen y términos
   - name: bd_personal
-    description: Personal centralizado, catálogos (cargos, tipo doc, ciudad)
+    description: Personal centralizado, roles y catálogos (cargos, tipo doc, ciudad, área, departamento)
+  - name: bd_catalogos_compartidos
+    description: Catálogos maestra compartidos (categorías, licencias, EM, adjuntos, etc.)
   - name: bd_inspecciones
-    description: Inspecciones preoperacional, ítems, adjuntos, llantas
+    description: Inspecciones preoperacional, ítems, adjuntos, llantas, formatos especiales
   - name: bd_mantenimientos
-    description: Órdenes de servicio, rutinas, programación mtto, fallas
+    description: Órdenes de servicio, rutinas, programación mtto, fallas, ejecutores EM
   - name: bd_inventario
-    description: Almacenes, entradas/salidas, traslados, solicitudes
+    description: Almacenes, entradas/salidas, traslados, solicitudes, seriales, proveedores
   - name: bd_capacitaciones
-    description: Capacitaciones, preguntas, respuestas, evidencias, certificados
+    description: Capacitaciones legacy (cap_*) + LMS training + encuestas + notificaciones
   - name: bd_flota_documentos
     description: Vehículos, remolques, cabezotes, documentos, firmas
 
+# Bases legacy en el mismo RDS (migración; no se crean con crear_bases_y_schema.sh):
+#   legacy_planesQi, legacy_newpruebas, legacy_newtmc
+#
 # SQL equivalente (para referencia):
 # CREATE DATABASE IF NOT EXISTS <name> CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

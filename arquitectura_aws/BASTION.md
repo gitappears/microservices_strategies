@@ -32,7 +32,7 @@ aws ec2 start-instances --instance-ids <INSTANCE_ID>
 
 El security group del bastión solo acepta SSH desde IPs que hayas autorizado explícitamente. **Si tu IP cambió**, verás `Connection timed out` al puerto 22 hasta que ejecutes esto.
 
-**Importante (zsh/bash):** el nombre de la variable debe ser un identificador válido (por ejemplo `MY_IP`). No uses la IP como nombre de variable (`186.x.x.x=...` o `107.x=...` falla con *command not found*).
+**Importante (zsh/bash):** el nombre de la variable debe ser un identificador válido (por ejemplo `MY_IP`). No uses la IP como nombre de variable (`186.x.x.x=...` o `107.x=...` falla con _command not found_).
 
 ```bash
 MY_IP=$(curl -s ifconfig.me)
@@ -81,12 +81,12 @@ ssh -N -i qinspecting-bastion.pem \
 
 Con el túnel activo, el host de la base es **tu máquina**:
 
-| Variable / concepto | Valor |
-|---------------------|--------|
-| Host | `127.0.0.1` |
-| Puerto MySQL | `3306` |
-| Usuario | `qinspect_admin` (u el definido en RDS) |
-| Contraseña | La del RDS / secret (no vacía) |
+| Variable / concepto | Valor                                   |
+| ------------------- | --------------------------------------- |
+| Host                | `127.0.0.1`                             |
+| Puerto MySQL        | `3306`                                  |
+| Usuario             | `qinspect_admin` (u el definido en RDS) |
+| Contraseña          | La del RDS / secret (no vacía)          |
 
 Ejemplo mínimo en `.env` (ver detalle en [Configurar la API para usar el túnel](#config-api-tunel) más abajo):
 
@@ -136,13 +136,13 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=qinspecting-bastion" 
 
 ## Datos actuales
 
-| Dato | Valor |
-|------|--------|
+| Dato                        | Valor                                                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
 | **IP pública (Elastic IP)** | `107.23.150.14` (estable entre stop/start de la instancia; liberar la EIP en AWS si ya no la usas) |
-| **Usuario SSH** | `ec2-user` |
-| **Clave privada** | `arquitectura_aws/qinspecting-bastion.pem` |
-| **Security Group bastión** | `sg-0bca7597802398cbc` |
-| **RDS endpoint** | `qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com` |
+| **Usuario SSH**             | `ec2-user`                                                                                         |
+| **Clave privada**           | `arquitectura_aws/qinspecting-bastion.pem`                                                         |
+| **Security Group bastión**  | `sg-0bca7597802398cbc`                                                                             |
+| **RDS endpoint**            | `qinspecting-prod.cmb8y2g0mlda.us-east-1.rds.amazonaws.com`                                        |
 
 ## Elastic IP (IP pública estable)
 
@@ -172,7 +172,7 @@ El orden recomendado está en [Flujo completo (bastión y túnel)](#flujo-bastio
 ### Checklist antes del túnel
 
 1. **Bastión en ejecución** y **PublicIpAddress** actual (compruébalo con `describe-instances`; la tabla «Datos actuales» puede desfasarse).
-2. **Security group del bastión** (`sg-0bca7597802398cbc`): entrada **TCP 22** desde **tu IP pública** en **`${MY_IP}/32`** (ver [Paso 2: permitir SSH](#paso-sg-ssh)). Si cambias de red, SSH hará *timeout* hasta que autorices la nueva IP.
+2. **Security group del bastión** (`sg-0bca7597802398cbc`): entrada **TCP 22** desde **tu IP pública** en **`${MY_IP}/32`** (ver [Paso 2: permitir SSH](#paso-sg-ssh)). Si cambias de red, SSH hará _timeout_ hasta que autorices la nueva IP.
 3. **Clave `.pem`** accesible (p. ej. `microservices_strategies/qinspecting-bastion.pem`).
 
 ### 1. Abrir el túnel (dejar esta terminal abierta)
@@ -222,11 +222,11 @@ Si la API usa varias bases (tenancy, personal, mantenimientos, etc.), define cad
 
 ### Resumen
 
-| Paso | Acción |
-|------|--------|
-| 1 | Abrir túnel (`./start-rds-tunnel.sh` o `ssh -L 3306:...`) y **no cerrar** esa terminal |
-| 2 | En `.env` de la API: `DATABASE_*` hacia `127.0.0.1:3306` y credenciales RDS |
-| 3 | Arrancar la API en **otra** terminal |
+| Paso | Acción                                                                                 |
+| ---- | -------------------------------------------------------------------------------------- |
+| 1    | Abrir túnel (`./start-rds-tunnel.sh` o `ssh -L 3306:...`) y **no cerrar** esa terminal |
+| 2    | En `.env` de la API: `DATABASE_*` hacia `127.0.0.1:3306` y credenciales RDS            |
+| 3    | Arrancar la API en **otra** terminal                                                   |
 
 ## Crear las 7 bases desde el bastión
 
@@ -311,7 +311,7 @@ cd ~/refactor_ddl && ./crear_bases_y_schema.sh qinspecting-prod.cmb8y2g0mlda.us-
 
 Los `00_schema.sql` usan **CREATE TABLE IF NOT EXISTS**: se crean tablas nuevas que falten, pero **no se modifican tablas ya existentes** (no se añaden columnas ni se cambian tipos). Si necesitas cambiar la estructura de una tabla ya creada, tienes que:
 
-- escribir y ejecutar **ALTER TABLE** a mano en esa base, o  
+- escribir y ejecutar **ALTER TABLE** a mano en esa base, o
 - **borrar esa base**, crearla de nuevo y volver a ejecutar su `00_schema.sql` (solo si puedes perder los datos de esa base).
 
 <a id="troubleshooting-ssh-timeout"></a>

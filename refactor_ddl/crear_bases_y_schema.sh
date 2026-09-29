@@ -32,11 +32,11 @@ mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -e "
 "
 
 for name in 01_bd_tenancy_planes 02_bd_personal 08_bd_catalogos_compartidos 03_bd_inspecciones 04_bd_mantenimientos 05_bd_inventario 06_bd_capacitaciones 07_bd_flota_documentos; do
-  echo "Aplicando $name/00_schema.sql..."
+  echo "Aplicando $name/00_schema.sql (esquema completo sincronizado con bastión)..."
   mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" "${name#*_}" < "$DIR_SCRIPT/$name/00_schema.sql"
+  # Stubs opcionales (ya no crean tablas; se mantienen por compatibilidad de scripts):
   if [ -f "$DIR_SCRIPT/$name/01_catalogos.sql" ]; then
-    echo "Aplicando $name/01_catalogos.sql..."
-    mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" "${name#*_}" < "$DIR_SCRIPT/$name/01_catalogos.sql"
+    mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" "${name#*_}" < "$DIR_SCRIPT/$name/01_catalogos.sql" >/dev/null
   fi
 done
 

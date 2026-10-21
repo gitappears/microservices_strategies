@@ -2,5 +2,9 @@
 *.pem
 arquitectura_aws/*.pem
 
+.DS_Store
+arquitectura_aws/.DS_Store
+
+
 # SAM build
 .aws-sam

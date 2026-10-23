@@ -24,7 +24,7 @@ Parameters:
 Globals:
   Function:
     Timeout: 10
-    Runtime: nodejs20.x
+    Runtime: nodejs22.x
 
 Resources:
   Api:

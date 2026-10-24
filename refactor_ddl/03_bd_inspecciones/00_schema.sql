@@ -494,7 +494,9 @@ CREATE TABLE IF NOT EXISTS `preop_resumen_preoperacional` (
   `position_gps` text COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id_resumen`),
   KEY `idx_preop_resumen_empresa` (`id_empresa`),
-  KEY `idx_preop_resumen_placas` (`placa_vehiculo`,`placa_remolque`)
+  KEY `idx_preop_resumen_placas` (`placa_vehiculo`,`placa_remolque`),
+  KEY `idx_preop_resumen_empresa_placa_fecha` (`id_empresa`,`placa_vehiculo`,`fecha_preoperacional`),
+  KEY `idx_preop_resumen_empresa_usuario` (`id_empresa`,`usuario_preoperacional`,`id_resumen`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
